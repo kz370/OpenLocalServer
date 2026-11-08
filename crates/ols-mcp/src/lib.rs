@@ -554,12 +554,14 @@ fn mcp_tools() -> Vec<McpTool> {
         },
         McpTool {
             name: "ols_docker_dockerize".into(),
-            description: Some("Generate a Dockerfile, compose.yaml and .dockerignore for a registered project from what OLS detects (PHP, Node, Python or static). They are a starting point, not guaranteed to work. Never replaces an existing file. By default (dry_run) it only returns the plan.".to_string()),
+            description: Some("Generate a Dockerfile, compose.yaml and .dockerignore for a registered project from what OLS detects (PHP, Node, Python, Go, Rust, Ruby, Java, .NET or static). The project is copied into the image; dev mode adds `docker compose watch` rules, prod mode builds a multi-stage non-root image. Detected services (database, cache, queue, mail, search) are added as pinned images with generated passwords. They are a starting point, not guaranteed to work. Never replaces an existing file. By default (dry_run) it only returns the plan.".to_string()),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "project_id": { "type": "string", "description": "A project id from ols_list_projects." },
-                    "dry_run": { "type": "boolean", "description": "Only return the plan. Default true." }
+                    "dry_run": { "type": "boolean", "description": "Only return the plan. Default true." },
+                    "mode": { "type": "string", "enum": ["dev", "prod"], "description": "Default dev." },
+                    "services": { "type": "array", "items": { "type": "string" }, "description": "Service ids to add (mariadb, postgres, mongodb, redis, rabbitmq, meilisearch, mailpit, adminer). Default: the ones OLS detects." }
                 },
                 "required": ["project_id"]
             }),
@@ -1221,12 +1223,28 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         }
         "ols_docker_dockerize" => {
             let project_id = req_str!("project_id");
+            let options = ols_core::docker::dockerize::DockerizeOptions {
+                mode: if args.get("mode").and_then(|v| v.as_str()) == Some("prod") {
+                    ols_core::docker::dockerize::DockerizeMode::Prod
+                } else {
+                    ols_core::docker::dockerize::DockerizeMode::Dev
+                },
+                services: args.get("services").and_then(|v| v.as_array()).map(|a| {
+                    a.iter()
+                        .filter_map(|s| s.as_str().map(String::from))
+                        .collect()
+                }),
+            };
             if opt_bool!("dry_run").unwrap_or(true) {
-                C::PlanDockerize { project_id }
+                C::PlanDockerize {
+                    project_id,
+                    options,
+                }
             } else {
                 C::CreateDockerize {
                     project_id,
                     overwrite_compose: false,
+                    options,
                 }
             }
         }
@@ -1378,9 +1396,14 @@ fn guard_raw_command(cmd: CoreCommand) -> Result<CoreCommand, String> {
             spec,
             overwrite: false,
         }),
-        C::CreateDockerize { project_id, .. } => Ok(C::CreateDockerize {
+        C::CreateDockerize {
+            project_id,
+            options,
+            ..
+        } => Ok(C::CreateDockerize {
             project_id,
             overwrite_compose: false,
+            options,
         }),
         other => Ok(other),
     }
@@ -2436,7 +2459,7 @@ mod tests {
     fn docker_tools_build_commands() {
         assert!(matches!(
             build_command("ols_docker_dockerize", &json!({ "project_id": "p1" })).unwrap(),
-            CoreCommand::PlanDockerize { project_id } if project_id == "p1"
+            CoreCommand::PlanDockerize { project_id, .. } if project_id == "p1"
         ));
         assert!(matches!(
             build_command(
@@ -2452,7 +2475,8 @@ mod tests {
         assert!(matches!(
             guard_raw_command(CoreCommand::CreateDockerize {
                 project_id: "p1".into(),
-                overwrite_compose: true
+                overwrite_compose: true,
+                options: Default::default(),
             })
             .unwrap(),
             CoreCommand::CreateDockerize {

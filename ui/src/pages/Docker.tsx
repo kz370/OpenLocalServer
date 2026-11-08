@@ -295,12 +295,12 @@ export default function DockerPage() {
     }
   }
 
-  async function composeCreated(file: string, start: boolean) {
+  async function composeCreated(file: string, start: boolean, watch = false) {
     setComposeReload((n) => n + 1)
     setTab('compose')
     if (!start) return
     try {
-      const r = await runCommand({ type: 'docker_compose_action', path: file, action: 'up' })
+      const r = await runCommand({ type: 'docker_compose_action', path: file, action: watch ? 'watch' : 'up' })
       if (r.type === 'task_started') setTaskId(r.id)
     } catch (err) {
       setError(asDiagnostic(err))
@@ -612,7 +612,7 @@ export default function DockerPage() {
           onSaved={() => setComposeReload((n) => n + 1)}
         />
       )}
-      <DockerizeDialog open={dockerizeOpen} onClose={() => setDockerizeOpen(false)} onCreated={(f, start) => void composeCreated(f, start)} />
+      <DockerizeDialog open={dockerizeOpen} onClose={() => setDockerizeOpen(false)} onCreated={(f, start, watch) => void composeCreated(f, start, watch)} />
       <ComposeBuilderDialog open={builderOpen} onClose={() => setBuilderOpen(false)} onCreated={(f, start) => void composeCreated(f, start)} />
       <TaskOutputDialog
         taskId={taskId}

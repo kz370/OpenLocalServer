@@ -1,7 +1,7 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
 import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec } from './types/base'
-import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerSiteRequest, EnvEdit, PruneTargets, RunSpec, ServicePreset } from './types/docker'
+import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerizeOptions, DockerSiteRequest, EnvEdit, PruneTargets, RunSpec, ServicePreset } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
 import type { AutoBackupSettings, AutoBackupSiteSettings, BundleOptions, OnConflict, Profile, ResourceLimits, RestoreOptions, ScheduledTask, SnapshotOptions, TunnelConfig, Worker } from './types/tasks'
@@ -66,8 +66,8 @@ export type CoreCommand =
   | { type: 'list_wp_projects' }
   | { type: 'get_docker_status' }
   | { type: 'docker_watch'; on: boolean }
-  | { type: 'plan_dockerize'; project_id: string }
-  | { type: 'create_dockerize'; project_id: string; overwrite_compose?: boolean }
+  | { type: 'plan_dockerize'; project_id: string; options?: DockerizeOptions }
+  | { type: 'create_dockerize'; project_id: string; overwrite_compose?: boolean; options?: DockerizeOptions }
   | { type: 'start_docker_desktop' }
   | { type: 'list_docker_containers'; all?: boolean }
   | { type: 'docker_container_action'; id: string; action: DockerContainerAction }

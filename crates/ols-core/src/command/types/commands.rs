@@ -248,6 +248,9 @@ pub enum CoreCommand {
     /// 2.11.0: what Dockerize would write for a project (nothing is written).
     PlanDockerize {
         project_id: String,
+        /// 2.11.0: dev or production, and which services to add.
+        #[serde(default)]
+        options: crate::docker::dockerize::DockerizeOptions,
     },
     /// 2.11.0: writes a Dockerfile, compose file and .dockerignore for a project. A Dockerfile
     /// that exists is kept; an existing compose file needs `overwrite_compose` (backed up).
@@ -255,6 +258,8 @@ pub enum CoreCommand {
         project_id: String,
         #[serde(default)]
         overwrite_compose: bool,
+        #[serde(default)]
+        options: crate::docker::dockerize::DockerizeOptions,
     },
     /// §166: the generated passwords of a stack, for connection details (UI only).
     RevealDockerComposeSecrets {
