@@ -1,56 +1,74 @@
 <#
 .SYNOPSIS
-Updates the OpenLocalServer project version across all files in the repository.
+Updates the OpenLocalServer version (the app, and the administrator helper when it changed).
 
 .DESCRIPTION
-Synchronizes the version number across all repository manifests, configuration files,
-lockfiles, documentation, changelog, and release notes:
-  - Cargo.toml ([workspace.package] version)
-  - src-tauri/tauri.conf.json (version)
-  - ui/package.json (version)
-  - ui/package-lock.json (version in root and packages[""])
-  - Cargo.lock (ols-core, ols-helper, ols-cli, ols-mcp, openlocalserver workspace packages)
-  - README.md (version badge)
-  - CHANGELOG.md (adds new version section if missing)
-  - release-notes/v<version>.md (creates scaffold template if missing)
-  - crates/ols-core/src/elevate.rs (ADMIN_HELPER_VERSION, only with -HelperVersion)
+The APP version is set in every file AGENTS.md section 5 lists:
+  - Cargo.toml ([workspace.package] version: ols-core, ols-cli (olsc), ols-mcp and
+    the desktop app all use it, so olsc --version and MCP serverInfo match the app)
+  - src-tauri/tauri.conf.json, ui/package.json, ui/package-lock.json
+  - Cargo.lock (ols-core, ols-cli, ols-mcp, openlocalserver)
+  - README.md (version badge and installer name in the Download section)
+  - CHANGELOG.md (adds the [version] section if missing)
+  - release-notes/v<version>.md (creates a draft if missing)
+  - ui/src/pages/Settings.tsx (release-notes import and the version fallbacks)
+  - crates/ols-core/catalog/user_manual.md and docs/OLS_USER_MANUAL.md
+    (Version header, Table of Contents line and Section 17 heading, plus an empty
+    "What's New in v<version>" block when there is none yet)
+  - index.html (download asset names, the version fact badge and the footer)
 
-Validates the new version against Semantic Versioning rules, checks lockfile
-integrity using cargo metadata, and reports all file updates cleanly.
+The ADMINISTRATOR HELPER has its own version: crates/ols-helper/Cargo.toml and
+ADMIN_HELPER_VERSION in crates/ols-core/src/elevate.rs (kept equal). A new helper
+version makes Settings offer a one-time elevated update, so it changes only when the
+helper changed. With the default -Helper auto, the helper follows the app version when
+its code (crates/ols-helper, hosts.rs, exec.rs, domain/store.rs) changed since its
+version was last bumped (git history plus uncommitted changes), and keeps it otherwise.
 
-The administrator helper has its own version (ADMIN_HELPER_VERSION), separate from
-the app version. Installed helper services compare against it, and Settings offers an
-elevated reinstall only when it changes. An app bump never changes it. The script warns
-when helper code changed since the helper version was last bumped.
+Every change is prepared in memory first. If any expected text is not found, the
+script stops and writes nothing. Unchanged files are reported as UNCHANGED.
+
+Not changed on purpose (do these by hand): the release-notes bullets, the content
+of manual Section 17, and the release highlights on index.html.
 
 .PARAMETER Version
-The target version string (e.g. 2.3.0, v2.3.0, 3.0.0-rc.1).
-If omitted, the script prompts interactively while showing the current version.
-If omitted while -HelperVersion is given, only the helper version is changed.
+The target app version (e.g. 2.3.0, v2.3.0, 3.0.0-rc.1). If omitted, the script asks.
+If omitted while -HelperVersion is given, only the helper changes (helper-only mode).
+
+.PARAMETER Helper
+What happens to the helper version during an app bump:
+  auto (default)  follow the app version only if helper code changed since its last bump
+  bump            follow the app version
+  keep            do not change it
 
 .PARAMETER HelperVersion
-New ADMIN_HELPER_VERSION (e.g. 2.10.0). Bump it only when ols-helper, or the core code
-it runs (hosts.rs, exec.rs, domain/store.rs), changed in a way that needs the installed
-administrator copy replaced. Users with an older helper then see "Update (asks once)".
+Set the helper to this exact version (x.y.z), whatever -Helper says.
+
+.PARAMETER Unreleased
+Write "Unreleased" instead of today's date in new CHANGELOG and release-notes entries.
+On release day, run the script again for the same version with -Force and without
+-Unreleased: it replaces "Unreleased" with today's date.
+
+.PARAMETER Force
+Do not ask questions: no "re-apply?" prompt, and -Helper auto applies without asking.
 
 .PARAMETER DryRun
 Preview changes without writing anything to disk.
 
 .PARAMETER SkipLockCheck
-Skip the cargo metadata lockfile verification check.
+Skip the "cargo metadata --locked" lockfile verification.
 
 .PARAMETER NoChangelog
-Do not append a new version entry to CHANGELOG.md.
+Do not add a new version entry to CHANGELOG.md.
 
 .PARAMETER NoNotes
-Do not generate a draft release-notes/v<version>.md template.
+Do not generate a draft release-notes/v<version>.md.
 
 .EXAMPLE
 scripts\update-version.bat 2.3.0
-.\scripts\update-version\update-version.ps1 -Version 2.3.0
-.\scripts\update-version\update-version.ps1 -Version 2.3.0 -DryRun
-.\scripts\update-version\update-version.ps1 -Version 2.3.0 -HelperVersion 2.3.0
-.\scripts\update-version\update-version.ps1 -HelperVersion 2.3.0
+scripts\update-version.bat 2.3.0 -Unreleased -DryRun
+scripts\update-version.bat 2.3.0 -Helper bump
+scripts\update-version.bat 2.3.0 -Helper keep
+scripts\update-version.bat -HelperVersion 2.3.1
 #>
 
 [CmdletBinding()]
@@ -58,8 +76,12 @@ param(
     [Parameter(Position = 0)]
     [string]$Version,
 
+    [ValidateSet('auto', 'bump', 'keep')]
+    [string]$Helper = 'auto',
     [string]$HelperVersion,
 
+    [switch]$Unreleased,
+    [switch]$Force,
     [switch]$DryRun,
     [switch]$SkipLockCheck,
     [switch]$NoChangelog,
@@ -72,25 +94,40 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Non-ASCII characters are built from code points so the script reads the same
+# under Windows PowerShell 5.1 (which reads BOM-less files as ANSI) and pwsh 7.
+$emDash = [string][char]0x2014
+$midDot = [string][char]0x00B7
+
 if ($Help) {
     Write-Host ""
     Write-Host "Usage: update-version.bat [version] [options]" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Arguments:"
-    Write-Host "  version              New target version (e.g. 2.3.0, v2.3.0)"
+    Write-Host "  version              New app version (e.g. 2.3.0, v2.3.0). olsc and ols-mcp"
+    Write-Host "                       always share it; only the helper has its own."
+    Write-Host ""
+    Write-Host "Administrator helper version:"
+    Write-Host "  -Helper auto         Default. Follow the app version only if helper code"
+    Write-Host "                       changed since the helper's last bump."
+    Write-Host "  -Helper bump         Follow the app version."
+    Write-Host "  -Helper keep         Do not change it."
+    Write-Host "  -HelperVersion <v>   Set it to exactly <v> (x.y.z). Without an app version,"
+    Write-Host "                       only the helper changes."
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  -HelperVersion <v>   Also set ADMIN_HELPER_VERSION (administrator helper)."
-    Write-Host "                       Without a version argument, changes only the helper version."
+    Write-Host "  -Unreleased          Date new CHANGELOG / release-notes entries 'Unreleased'."
+    Write-Host "                       Re-run later with -Force (without -Unreleased) to set today's date."
+    Write-Host "  -Force               Ask nothing (re-apply the current version, accept auto choices)"
     Write-Host "  -DryRun              Preview file updates without modifying files"
-    Write-Host "  -SkipLockCheck       Skip cargo metadata lockfile verification"
+    Write-Host "  -SkipLockCheck       Skip the cargo metadata --locked verification"
     Write-Host "  -NoChangelog         Do not add an entry to CHANGELOG.md"
     Write-Host "  -NoNotes             Do not generate release-notes/v<version>.md draft"
     Write-Host "  -Help, -h, -?        Show this help message"
     Write-Host ""
-    Write-Host "The helper version is separate from the app version. Bump it only when"
-    Write-Host "ols-helper (or hosts.rs, exec.rs, domain/store.rs) changed; installed helpers"
-    Write-Host "older than it get an 'Update (asks once)' button in Settings."
+    Write-Host "Nothing is written unless every expected piece of text was found."
+    Write-Host "A new helper version makes Settings offer a one-time elevated update, so"
+    Write-Host "bump it only when the helper (or hosts.rs, exec.rs, domain/store.rs) changed."
     Write-Host ""
     exit 0
 }
@@ -111,47 +148,128 @@ function Write-Diagnostic {
     Write-Host ""
 }
 
-# UTF-8 without BOM writer (reliable across PS 5.1 and PS 7+)
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-
-function Read-Utf8File([string]$relativePath) {
-    $fullPath = Join-Path $repoRoot $relativePath
-    if (-not (Test-Path $fullPath)) {
-        Write-Diagnostic -Problem "Target file missing: $relativePath" `
-            -Cause "The file does not exist at expected path '$fullPath'." `
-            -Fix "Check out the missing file or verify repository integrity."
-        exit 1
-    }
-    return [System.IO.File]::ReadAllText($fullPath, [System.Text.Encoding]::UTF8)
-}
-
-function Save-Utf8File([string]$relativePath, [string]$content) {
-    $fullPath = Join-Path $repoRoot $relativePath
-    if ($DryRun) {
-        Write-Host "  [PREVIEW] $relativePath" -ForegroundColor Magenta
-        return
-    }
-    [System.IO.File]::WriteAllText($fullPath, $content, $utf8NoBom)
-    Write-Host "  [UPDATED] $relativePath" -ForegroundColor Green
-}
-
-# 1. Read current version from Cargo.toml
-$cargoTomlContent = Read-Utf8File "Cargo.toml"
-$cargoTomlMatch = [regex]::Match($cargoTomlContent, '(?m)^\[workspace\.package\][\s\S]*?^version\s*=\s*"([^"]+)"')
-if (-not $cargoTomlMatch.Success) {
-    Write-Diagnostic -Problem "Could not find [workspace.package] version in Cargo.toml." `
-        -Cause "Cargo.toml does not contain a standard '[workspace.package]' block with 'version = ...'." `
-        -Fix "Restore or format the [workspace.package] section in Cargo.toml."
+function Stop-Bump([string]$Problem, [string]$Cause, [string]$Fix) {
+    Write-Diagnostic -Problem $Problem -Cause $Cause -Fix $Fix
+    Write-Host "Nothing was written." -ForegroundColor Yellow
     exit 1
 }
-$currentVersion = $cargoTomlMatch.Groups[1].Value
 
-# Administrator helper version (independent of the app version)
+# ---------------------------------------------------------------------------
+# In-memory edits: every change lands in $pending first and is written by
+# Write-Pending at the end, so a failed step leaves the repository untouched.
+# ---------------------------------------------------------------------------
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$pending = [ordered]@{}   # relative path -> new content
+$original = @{}           # relative path -> content on disk ($null for new files)
+$hadBom = @{}             # relative path -> file started with a UTF-8 BOM
+
+function Test-RepoFile([string]$relativePath) {
+    return Test-Path (Join-Path $repoRoot $relativePath)
+}
+
+function Get-Text([string]$relativePath) {
+    if ($pending.Contains($relativePath)) { return [string]$pending[$relativePath] }
+    $fullPath = Join-Path $repoRoot $relativePath
+    if (-not (Test-Path $fullPath)) {
+        Stop-Bump "Target file missing: $relativePath" `
+            "The file does not exist at expected path '$fullPath'." `
+            "Check out the missing file or verify repository integrity."
+    }
+    $bytes = [System.IO.File]::ReadAllBytes($fullPath)
+    $hadBom[$relativePath] = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+    $text = [System.IO.File]::ReadAllText($fullPath, [System.Text.Encoding]::UTF8)
+    $original[$relativePath] = $text
+    $pending[$relativePath] = $text
+    return $text
+}
+
+function Set-Text([string]$relativePath, [string]$content) {
+    if (-not $original.ContainsKey($relativePath)) { $original[$relativePath] = $null; $hadBom[$relativePath] = $false }
+    $pending[$relativePath] = $content
+}
+
+# Replaces $Pattern in a file. Stops the whole run when the text is not found,
+# unless -Optional. -Expect N requires exactly N matches; -First replaces only the first.
+function Edit-Text {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Pattern,
+        [Parameter(Mandatory = $true)][string]$Replacement,
+        [Parameter(Mandatory = $true)][string]$What,
+        [int]$Expect = 0,
+        [switch]$First,
+        [switch]$Optional
+    )
+    $text = Get-Text $Path
+    $rx = [regex]::new($Pattern)
+    $count = $rx.Matches($text).Count
+    if ($count -eq 0) {
+        if ($Optional) { return 0 }
+        Stop-Bump "Could not find $What in $Path." `
+            "The text this script looks for (pattern: $Pattern) is not in the file; it was probably reworded or moved." `
+            "Restore the expected text in $Path, or update the pattern in scripts/update-version/update-version.ps1."
+    }
+    if ($Expect -gt 0 -and $count -ne $Expect) {
+        Stop-Bump "Found $count matches for $What in $Path, expected $Expect." `
+            "The file has more or fewer copies of this text than the script was written for." `
+            "Check $Path by hand, then adjust the expected count in scripts/update-version/update-version.ps1."
+    }
+    if ($First) { $new = $rx.Replace($text, $Replacement, 1) } else { $new = $rx.Replace($text, $Replacement) }
+    Set-Text $Path $new
+    return $count
+}
+
+function Write-Pending {
+    foreach ($rel in @($pending.Keys)) {
+        $new = [string]$pending[$rel]
+        $old = $original[$rel]
+        if ($null -ne $old -and $new -ceq $old) {
+            Write-Host "  [UNCHANGED] $rel" -ForegroundColor Gray
+            continue
+        }
+        $label = if ($null -eq $old) { 'CREATED' } else { 'UPDATED' }
+        if ($DryRun) {
+            Write-Host "  [PREVIEW]   $rel ($($label.ToLower()))" -ForegroundColor Magenta
+            continue
+        }
+        $fullPath = Join-Path $repoRoot $rel
+        $encoding = if ($hadBom[$rel]) { New-Object System.Text.UTF8Encoding($true) } else { $utf8NoBom }
+        [System.IO.File]::WriteAllText($fullPath, $new, $encoding)
+        Write-Host "  [$label]   $rel" -ForegroundColor Green
+    }
+}
+
+function Test-SemVer([string]$value) {
+    return $value -match '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+}
+
+function ConvertTo-PlainVersion([string]$value) {
+    $value = $value.Trim()
+    if ($value -match '^[vV](\d+.*)$') { $value = $Matches[1] }
+    return $value
+}
+
+# -1 / 0 / 1 on major.minor.patch (pre-release suffixes are ignored for this check)
+function Compare-CoreVersion([string]$a, [string]$b) {
+    $pa = @(($a -split '[-+]')[0].Split('.') | ForEach-Object { [int]$_ })
+    $pb = @(($b -split '[-+]')[0].Split('.') | ForEach-Object { [int]$_ })
+    for ($i = 0; $i -lt 3; $i++) {
+        if ($pa[$i] -lt $pb[$i]) { return -1 }
+        if ($pa[$i] -gt $pb[$i]) { return 1 }
+    }
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Administrator helper: the only part with its own version
+# ---------------------------------------------------------------------------
 $elevatePath = "crates/ols-core/src/elevate.rs"
+$helperCargo = "crates/ols-helper/Cargo.toml"
 $helperConstPattern = '(?m)(^pub const ADMIN_HELPER_VERSION: &str = )"([^"]+)"'
+$packageVersionPattern = '(?ms)(^\[package\]\r?\n(?:(?!^\[)[^\r\n]*\r?\n)*?^version\s*=\s*)"([^"]+)"'
 
 # Files the resident helper service runs. Changing any of them without bumping
-# ADMIN_HELPER_VERSION leaves users on the old administrator copy with no prompt.
+# the helper version leaves users on the old administrator copy with no prompt.
 $helperWatchPaths = @(
     "crates/ols-helper/src",
     "crates/ols-helper/Cargo.toml",
@@ -161,39 +279,38 @@ $helperWatchPaths = @(
 )
 
 function Get-CurrentHelperVersion {
-    $content = Read-Utf8File $elevatePath
-    $m = [regex]::Match($content, $helperConstPattern)
+    $c = [regex]::Match((Get-Text $elevatePath), $helperConstPattern)
+    if (-not $c.Success) {
+        Stop-Bump "Could not find ADMIN_HELPER_VERSION in $elevatePath." `
+            "The constant was renamed, moved, or no longer has the form 'pub const ADMIN_HELPER_VERSION: &str = `"x.y.z`";'." `
+            "Restore the constant in $elevatePath, or update `$helperConstPattern in this script."
+    }
+    $m = [regex]::Match((Get-Text $helperCargo), $packageVersionPattern)
     if (-not $m.Success) {
-        Write-Diagnostic -Problem "Could not find ADMIN_HELPER_VERSION in $elevatePath." `
-            -Cause "The constant was renamed, moved, or no longer has the form 'pub const ADMIN_HELPER_VERSION: &str = `"x.y.z`";'." `
-            -Fix "Restore the constant in $elevatePath, or update `$helperConstPattern in this script."
-        exit 1
+        Stop-Bump "Could not find the [package] version in $helperCargo." `
+            "The helper needs its own 'version = `"x.y.z`"' line (not 'version.workspace = true') in [package]." `
+            "Put 'version = `"$($c.Groups[2].Value)`"' (the ADMIN_HELPER_VERSION value) in the [package] section of $helperCargo."
     }
-    return $m.Groups[2].Value
+    if ($m.Groups[2].Value -ne $c.Groups[2].Value) {
+        Write-Host "[!] $helperCargo says $($m.Groups[2].Value) but ADMIN_HELPER_VERSION is $($c.Groups[2].Value); the constant wins and both are set together on the next helper bump." -ForegroundColor Yellow
+    }
+    return $c.Groups[2].Value
 }
 
-function Set-HelperVersion([string]$newHelper) {
-    if ($newHelper -match '^[vV](\d+.*)$') { $newHelper = $Matches[1] }
-    if ($newHelper -notmatch '^\d+\.\d+\.\d+$') {
-        Write-Diagnostic -Problem "Invalid helper version '$newHelper'." `
-            -Cause "ADMIN_HELPER_VERSION is compared as major.minor.patch; pre-release or build suffixes are not supported." `
-            -Fix "Pass a plain version such as -HelperVersion 2.10.0."
-        exit 1
-    }
-    $oldHelper = Get-CurrentHelperVersion
-    if ($newHelper -eq $oldHelper) {
-        Write-Host "  [UNCHANGED] $elevatePath (ADMIN_HELPER_VERSION already $oldHelper)" -ForegroundColor Gray
-        return
-    }
-    $content = Read-Utf8File $elevatePath
-    $updated = [regex]::Replace($content, $helperConstPattern, "`${1}`"$newHelper`"", 1)
-    Save-Utf8File $elevatePath $updated
-    Write-Host "            ADMIN_HELPER_VERSION $oldHelper -> $newHelper (installed helpers will be offered an update)" -ForegroundColor Gray
+function Set-HelperVersion([string]$newVersion) {
+    $replacement = '${1}"' + $newVersion + '"'
+    $null = Edit-Text -Path $elevatePath -Pattern $helperConstPattern -Replacement $replacement `
+        -What "ADMIN_HELPER_VERSION" -Expect 1
+    $null = Edit-Text -Path $helperCargo -Pattern $packageVersionPattern -Replacement $replacement `
+        -What "the [package] version" -First
+    $null = Edit-Text -Path "Cargo.lock" -What "the ols-helper package entry" -Expect 1 `
+        -Pattern '(?ms)(^\[\[package\]\]\r?\nname\s*=\s*"ols-helper"\r?\nversion\s*=\s*)"[^"]+"' `
+        -Replacement $replacement
 }
 
-# Returns helper-related files changed since ADMIN_HELPER_VERSION was last edited,
-# including uncommitted changes. Empty when nothing changed or git is unavailable.
-function Get-HelperChangesSinceBump {
+# Helper files changed since ADMIN_HELPER_VERSION was last edited, including
+# uncommitted changes. $null when git or the history is unavailable.
+function Get-HelperChanges {
     $git = Get-Command git -ErrorAction SilentlyContinue
     if (-not $git) { return $null }
     Push-Location $repoRoot
@@ -204,52 +321,143 @@ function Get-HelperChangesSinceBump {
         $committed = @(& git diff --name-only "$bump..HEAD" -- @helperWatchPaths 2>$null)
         $uncommitted = @(& git diff --name-only HEAD -- @helperWatchPaths 2>$null)
         # Leading comma keeps an empty or single-item result an array instead of $null/a string.
-        return ,@(($committed + $uncommitted) | Where-Object { $_ } | Sort-Object -Unique)
+        return , @(($committed + $uncommitted) | Where-Object { $_ } | Sort-Object -Unique)
     }
     finally {
         Pop-Location
     }
 }
 
-function Show-HelperCheck {
-    $changes = Get-HelperChangesSinceBump
-    $current = Get-CurrentHelperVersion
-    if ($null -eq $changes) {
-        Write-Host "  [SKIPPED] Helper change check (git unavailable or no history for $elevatePath)" -ForegroundColor Gray
-        return $false
+# Validate -HelperVersion up front
+if (-not [string]::IsNullOrWhiteSpace($HelperVersion)) {
+    $HelperVersion = ConvertTo-PlainVersion $HelperVersion
+    if ($HelperVersion -notmatch '^\d+\.\d+\.\d+$') {
+        Stop-Bump "Invalid helper version '$HelperVersion'." `
+            "ADMIN_HELPER_VERSION is compared as major.minor.patch; pre-release or build suffixes are not supported." `
+            "Pass a plain version such as -HelperVersion 2.10.0."
     }
-    if ($changes.Count -eq 0) {
-        Write-Host "  [OK] Helper code unchanged since ADMIN_HELPER_VERSION $current; no helper bump needed." -ForegroundColor Green
-        return $false
-    }
-    Write-Host ""
-    Write-Host "[!] Helper code changed since ADMIN_HELPER_VERSION was last set ($current):" -ForegroundColor Yellow
-    foreach ($f in $changes) { Write-Host "      $f" -ForegroundColor Yellow }
-    Write-Host "    If these changes affect what the installed helper does, bump the helper version" -ForegroundColor Yellow
-    Write-Host "    so users get 'Update (asks once)'. Otherwise they keep running the old copy." -ForegroundColor Yellow
-    Write-Host "    Fix: scripts\update-version.bat -HelperVersion <x.y.z>" -ForegroundColor Cyan
-    return $true
+}
+else {
+    $HelperVersion = $null
 }
 
+# Decides and stages the helper version. $appVersion is $null in helper-only mode.
+function Update-Helper([string]$appVersion, [bool]$interactive) {
+    $current = Get-CurrentHelperVersion
+    $target = $null
+    $reason = ''
+    if ($HelperVersion) {
+        $target = $HelperVersion; $reason = 'set with -HelperVersion'
+    }
+    elseif ($Helper -eq 'keep') {
+        $reason = '-Helper keep'
+    }
+    elseif ($Helper -eq 'bump') {
+        $target = $appVersion; $reason = '-Helper bump'
+    }
+    else {
+        $changes = Get-HelperChanges
+        if ($null -eq $changes) {
+            $reason = 'no git history; kept (use -Helper bump to change it)'
+        }
+        elseif ($changes.Count -eq 0) {
+            $reason = 'no helper code changed since its last bump'
+        }
+        else {
+            Write-Host "  Helper code changed since $current" -ForegroundColor Yellow
+            foreach ($f in $changes) { Write-Host "      $f" -ForegroundColor Yellow }
+            $take = $true
+            if ($interactive) {
+                $answer = Read-Host "  Bump the helper to $appVersion? (Y/n)"
+                $take = $answer -notmatch '^[nN]'
+            }
+            if ($take) { $target = $appVersion; $reason = "$($changes.Count) changed file(s)" }
+            else { $reason = 'changed, but you chose to keep it' }
+        }
+    }
+
+    if ($target -and $target -notmatch '^\d+\.\d+\.\d+$') {
+        Stop-Bump "The helper cannot take version '$target'." `
+            "The helper version is compared as major.minor.patch, so pre-release versions are not allowed." `
+            "Pass a plain version, for example -HelperVersion $(($target -split '[-+]')[0]), or -Helper keep."
+    }
+    if ($target -and $target -eq $current) {
+        $target = $null; $reason = 'already this version'
+    }
+    # Only an explicit -HelperVersion may lower it.
+    if ($target -and -not $HelperVersion -and (Compare-CoreVersion $target $current) -lt 0) {
+        $target = $null; $reason = "would go down from $current; kept (use -HelperVersion to force)"
+    }
+
+    if ($target) {
+        Set-HelperVersion $target
+        Write-Host "  Administrator helper  $current -> $target  ($reason)" -ForegroundColor Green
+        Write-Host "  Note: a new helper version makes Settings offer a one-time elevated update. Mention it in the release notes." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "  Administrator helper  $current  kept ($reason)" -ForegroundColor Gray
+    }
+}
+
+function Invoke-LockCheck {
+    if ($SkipLockCheck -or $DryRun) { return }
+    $cargoCmd = Get-Command cargo -ErrorAction SilentlyContinue
+    if (-not $cargoCmd) { return }
+    Write-Host ""
+    Write-Host "Verifying Cargo.lock matches the workspace (cargo metadata --locked)..." -ForegroundColor Gray
+    Push-Location $repoRoot
+    # Cargo prints progress ("Downloading crates") on stderr; under 'Stop',
+    # Windows PowerShell 5.1 would turn that into a terminating error.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $metaErrors = @(& cargo metadata --format-version 1 --locked 2>&1 | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] })
+        $metaExit = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+        Pop-Location
+    }
+    if ($metaExit -ne 0) {
+        Write-Diagnostic -Problem "Cargo.lock does not match the workspace after the update." `
+            -Cause (($metaErrors | ForEach-Object { $_.ToString() }) -join "`n") `
+            -Fix "The files above were written. Run 'cargo check --workspace' to inspect, or undo with 'git checkout -- .' and report the problem."
+        exit 1
+    }
+    Write-Host "  [OK] Cargo.lock matches the workspace." -ForegroundColor Green
+}
+
+# 1. Read the current app version from Cargo.toml
+$cargoTomlContent = Get-Text "Cargo.toml"
+$cargoTomlMatch = [regex]::Match($cargoTomlContent, '(?m)^\[workspace\.package\][\s\S]*?^version\s*=\s*"([^"]+)"')
+if (-not $cargoTomlMatch.Success) {
+    Stop-Bump "Could not find [workspace.package] version in Cargo.toml." `
+        "Cargo.toml does not contain a standard '[workspace.package]' block with 'version = ...'." `
+        "Restore or format the [workspace.package] section in Cargo.toml."
+}
+$currentVersion = $cargoTomlMatch.Groups[1].Value
+
 # Helper-only mode: -HelperVersion without an app version
-if ([string]::IsNullOrWhiteSpace($Version) -and -not [string]::IsNullOrWhiteSpace($HelperVersion)) {
+if ([string]::IsNullOrWhiteSpace($Version) -and $HelperVersion) {
     Write-Host ""
     Write-Host "=== Administrator helper version only (app stays $currentVersion) ===" -ForegroundColor Cyan
-    if ($DryRun) {
-        Write-Host "(DRY RUN: no files will be written to disk)" -ForegroundColor Yellow
-    }
+    if ($DryRun) { Write-Host "(DRY RUN: no files will be written to disk)" -ForegroundColor Yellow }
     Write-Host ""
-    Set-HelperVersion $HelperVersion.Trim()
+    Update-Helper $null $false
+    Write-Host ""
+    Write-Host "Files:" -ForegroundColor Cyan
+    Write-Pending
+    Invoke-LockCheck
     Write-Host ""
     Write-Host "Next steps:" -ForegroundColor Cyan
-    Write-Host "  1. Run helper tests:   cargo test -p ols-helper"
-    Write-Host "  2. Update specs:       specs/runtime.md log line, specs/data_models.txt (ADMIN_HELPER_VERSION)"
-    Write-Host "  3. Release notes:      mention that Settings will offer a one-time helper update"
+    Write-Host "  1. Run checks:          scripts\run-checks.bat"
+    Write-Host "  2. Update specs:        specs/runtime.md log line"
+    Write-Host "  3. Release notes:       mention that Settings will offer a one-time helper update"
     Write-Host ""
     exit 0
 }
 
-# 2. Acquire and validate target version
+# 2. Acquire and validate the target app version
 $versionPrompted = $false
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $versionPrompted = $true
@@ -263,26 +471,17 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
         Write-Host "No version entered. Aborting." -ForegroundColor Gray
         exit 0
     }
-    $Version = $prompted.Trim()
-} else {
-    $Version = $Version.Trim()
+    $Version = $prompted
+}
+$Version = ConvertTo-PlainVersion $Version
+
+if (-not (Test-SemVer $Version)) {
+    Stop-Bump "Invalid version format '$Version'." `
+        "OLS follows Semantic Versioning (SemVer 2.0.0), expecting format like '2.3.0' or '2.3.0-rc.1'." `
+        "Specify a valid semantic version (e.g. 2.3.0)."
 }
 
-# Normalize: strip leading 'v' or 'V'
-if ($Version -match '^[vV](\d+.*)$') {
-    $Version = $Matches[1]
-}
-
-# SemVer validation (major.minor.patch[-prerelease][+build])
-$semverRegex = '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
-if ($Version -notmatch $semverRegex) {
-    Write-Diagnostic -Problem "Invalid version format '$Version'." `
-        -Cause "OLS follows Semantic Versioning (SemVer 2.0.0), expecting format like '2.3.0' or '2.3.0-rc.1'." `
-        -Fix "Specify a valid semantic version (e.g. 2.3.0)."
-    exit 1
-}
-
-if ($Version -eq $currentVersion) {
+if ($Version -eq $currentVersion -and -not $Force) {
     Write-Host ""
     Write-Host "Target version '$Version' is already the current version." -ForegroundColor Yellow
     $confirm = Read-Host "Re-apply update anyway? (y/N)"
@@ -292,6 +491,12 @@ if ($Version -eq $currentVersion) {
     }
 }
 
+$today = (Get-Date).ToString("yyyy-MM-dd")
+$releaseDate = if ($Unreleased) { 'Unreleased' } else { $today }
+$escapedVersion = [regex]::Escape($Version)
+# A version as it appears inside other text (file names, footers): x.y.z[-pre]
+$anyVersion = '\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?'
+
 Write-Host ""
 Write-Host "=== Bumping version: $currentVersion -> $Version ===" -ForegroundColor Cyan
 if ($DryRun) {
@@ -299,160 +504,186 @@ if ($DryRun) {
 }
 Write-Host ""
 
-# 3. Update Cargo.toml
-$newCargoToml = [regex]::Replace(
-    $cargoTomlContent,
-    '(?m)(^\[workspace\.package\][\s\S]*?^version\s*=\s*)"[^"]+"',
-    "`${1}`"$Version`""
-)
-Save-Utf8File "Cargo.toml" $newCargoToml
+# 3. Cargo.toml (workspace version: ols-core, olsc, ols-mcp and the desktop app)
+$null = Edit-Text -Path "Cargo.toml" -What "[workspace.package] version" -Expect 1 `
+    -Pattern '(?m)(^\[workspace\.package\][\s\S]*?^version\s*=\s*)"[^"]+"' `
+    -Replacement ('${1}"' + $Version + '"')
 
-# 4. Update src-tauri/tauri.conf.json
-$tauriConfContent = Read-Utf8File "src-tauri/tauri.conf.json"
-$newTauriConf = [regex]::Replace(
-    $tauriConfContent,
-    '(?m)(^\s*"version"\s*:\s*)"[^"]+"',
-    "`${1}`"$Version`""
-)
-Save-Utf8File "src-tauri/tauri.conf.json" $newTauriConf
+# 4. src-tauri/tauri.conf.json (only the top-level "version", which comes first)
+$null = Edit-Text -Path "src-tauri/tauri.conf.json" -What '"version"' -First `
+    -Pattern '(?m)(^\s*"version"\s*:\s*)"[^"]+"' `
+    -Replacement ('${1}"' + $Version + '"')
 
-# 5. Update ui/package.json
-$packageJsonContent = Read-Utf8File "ui/package.json"
-$newPackageJson = [regex]::Replace(
-    $packageJsonContent,
-    '(?m)(^\s*"version"\s*:\s*)"[^"]+"',
-    "`${1}`"$Version`""
-)
-Save-Utf8File "ui/package.json" $newPackageJson
+# 5. ui/package.json
+$null = Edit-Text -Path "ui/package.json" -What '"version"' -First `
+    -Pattern '(?m)(^\s*"version"\s*:\s*)"[^"]+"' `
+    -Replacement ('${1}"' + $Version + '"')
 
-# 6. Update ui/package-lock.json (if present)
-$packageLockPath = Join-Path $repoRoot "ui/package-lock.json"
-if (Test-Path $packageLockPath) {
-    $lockContent = [System.IO.File]::ReadAllText($packageLockPath, [System.Text.Encoding]::UTF8)
-    $newLock = [regex]::Replace(
-        $lockContent,
-        '(?m)(^{\s*"name":\s*"openlocalserver-ui",\r?\n\s*"version":\s*)"[^"]+"',
-        "`${1}`"$Version`""
-    )
-    $newLock = [regex]::Replace(
-        $newLock,
-        '(?m)("":\s*\{\s*"name":\s*"openlocalserver-ui",\r?\n\s*"version":\s*)"[^"]+"',
-        "`${1}`"$Version`""
-    )
-    Save-Utf8File "ui/package-lock.json" $newLock
+# 6. ui/package-lock.json (root and packages[""])
+if (Test-RepoFile "ui/package-lock.json") {
+    $null = Edit-Text -Path "ui/package-lock.json" -What "the root version" -Expect 1 `
+        -Pattern '(?m)(^{\s*"name":\s*"openlocalserver-ui",\r?\n\s*"version":\s*)"[^"]+"' `
+        -Replacement ('${1}"' + $Version + '"')
+    $null = Edit-Text -Path "ui/package-lock.json" -What 'the packages[""] version' -Expect 1 `
+        -Pattern '(?m)("":\s*\{\s*"name":\s*"openlocalserver-ui",\r?\n\s*"version":\s*)"[^"]+"' `
+        -Replacement ('${1}"' + $Version + '"')
 }
 
-# 7. Update Cargo.lock (workspace members only: ols-cli, ols-core, ols-helper, openlocalserver)
-$cargoLockContent = Read-Utf8File "Cargo.lock"
-$targetPackages = "ols-cli|ols-core|ols-helper|ols-mcp|openlocalserver"
-$lockPattern = '(?ms)(^\[\[package\]\]\r?\nname\s*=\s*"(?:' + $targetPackages + ')"\r?\nversion\s*=\s*)"[^"]+"'
-$newCargoLock = [regex]::Replace($cargoLockContent, $lockPattern, "`${1}`"$Version`"")
-Save-Utf8File "Cargo.lock" $newCargoLock
+# 7. Cargo.lock: the four packages on the workspace version (the helper is step 14)
+$null = Edit-Text -Path "Cargo.lock" -What "the ols-cli, ols-core, ols-mcp and openlocalserver package entries" -Expect 4 `
+    -Pattern '(?ms)(^\[\[package\]\]\r?\nname\s*=\s*"(?:ols-cli|ols-core|ols-mcp|openlocalserver)"\r?\nversion\s*=\s*)"[^"]+"' `
+    -Replacement ('${1}"' + $Version + '"')
 
-# 8. Update README.md version badge
-$readmeContent = Read-Utf8File "README.md"
-$newReadme = [regex]::Replace(
-    $readmeContent,
-    '\[!\[Version\]\(https:\/\/img\.shields\.io\/badge\/version-[^-\)]+-blue\)\]\(\.\/CHANGELOG\.md\)',
-    "[![Version](https://img.shields.io/badge/version-$Version-blue)](./CHANGELOG.md)"
-)
-Save-Utf8File "README.md" $newReadme
+# 8. README.md: version badge and the installer name in the Download section
+$null = Edit-Text -Path "README.md" -What "the version badge" -Expect 1 `
+    -Pattern '\[!\[Version\]\(https:\/\/img\.shields\.io\/badge\/version-[^\)]+?-blue\)\]\(\.\/CHANGELOG\.md\)' `
+    -Replacement "[![Version](https://img.shields.io/badge/version-$Version-blue)](./CHANGELOG.md)"
+$null = Edit-Text -Path "README.md" -What "the installer name (OLS-x.y.z-setup.exe)" `
+    -Pattern ('OLS-' + $anyVersion + '-setup\.exe') `
+    -Replacement "OLS-$Version-setup.exe"
 
-# 9. Update CHANGELOG.md
+# 9. CHANGELOG.md
 if (-not $NoChangelog) {
-    $changelogContent = Read-Utf8File "CHANGELOG.md"
-    if ($changelogContent -notmatch "(?m)^##\s*\[$([regex]::Escape($Version))\]") {
-        $today = (Get-Date).ToString("yyyy-MM-dd")
-        $changelogEntry = @"
-## [Unreleased]
-
-## [$Version] — $today
-
-Feature release. Full notes: [`release-notes/v$Version.md`](./release-notes/v$Version.md).
-
-"@
-        $newChangelog = [regex]::Replace($changelogContent, '(?m)^##\s*\[Unreleased\]\r?\n', $changelogEntry, 1)
-        Save-Utf8File "CHANGELOG.md" $newChangelog
-    } else {
-        Write-Host "  [UNCHANGED] CHANGELOG.md (entry for [$Version] already exists)" -ForegroundColor Gray
+    $changelog = Get-Text "CHANGELOG.md"
+    if ($changelog -notmatch "(?m)^##\s*\[$escapedVersion\]") {
+        $entry = "## [Unreleased]`n`n## [$Version] $emDash $releaseDate`n`nFeature release. Full notes: [``release-notes/v$Version.md``](./release-notes/v$Version.md).`n"
+        $null = Edit-Text -Path "CHANGELOG.md" -What "the '## [Unreleased]' heading" -First `
+            -Pattern '(?m)^##\s*\[Unreleased\]\r?\n' -Replacement $entry.Replace('$', '$$')
+    }
+    elseif (-not $Unreleased) {
+        # Release day: turn "## [x.y.z] — Unreleased" into today's date.
+        $null = Edit-Text -Path "CHANGELOG.md" -What "the Unreleased date" -Optional `
+            -Pattern ("(?m)^(##\s*\[$escapedVersion\]\s*$emDash\s*)Unreleased") `
+            -Replacement ('${1}' + $today)
     }
 }
 
-# 10. Generate release-notes/v<version>.md draft
+# 10. release-notes/v<version>.md
 if (-not $NoNotes) {
     $notesFile = "release-notes/v$Version.md"
-    $fullNotesPath = Join-Path $repoRoot $notesFile
-    if (-not (Test-Path $fullNotesPath)) {
-        $today = (Get-Date).ToString("yyyy-MM-dd")
-        $notesContent = @"
-# OLS (Open Local Server) v$Version
-
-**Release date:** $today · **Platform:** Windows 10/11 (64-bit) · **License:** GPL-3.0-only
-
-Feature release.
-
-## Added
-- 
-
-## Changed & Improved
-- 
-
-## Fixed
-- 
-
-## Upgrading
-Download ``OLS-v$Version-setup.exe`` and run the installer. In-place upgrade from earlier versions preserves existing configuration, sites, databases, secrets, services, and certificates.
-"@
-        Save-Utf8File $notesFile $notesContent
-    } else {
-        Write-Host "  [UNCHANGED] $notesFile (already exists)" -ForegroundColor Gray
+    if (-not (Test-RepoFile $notesFile)) {
+        $notes = @(
+            "# OLS (Open Local Server) v$Version",
+            "",
+            "**Release date:** $releaseDate $midDot **Platform:** Windows 10/11 (64-bit) $midDot **License:** GPL-3.0-only",
+            "",
+            "Feature release.",
+            "",
+            "## Added",
+            "- ",
+            "",
+            "## Changed & Improved",
+            "- ",
+            "",
+            "## Fixed",
+            "- ",
+            "",
+            "## Upgrading",
+            "Download ``OLS-$Version-setup.exe`` and run the installer. In-place upgrade from earlier versions preserves existing configuration, sites, databases, secrets, services, and certificates.",
+            ""
+        ) -join "`n"
+        Set-Text $notesFile $notes
+    }
+    else {
+        # Older drafts named the installer OLS-v<version>-setup.exe; the real file has no "v".
+        $null = Edit-Text -Path $notesFile -What "an OLS-v<version> installer name" -Optional `
+            -Pattern ('OLS-v(' + $anyVersion + ')-setup\.exe') -Replacement 'OLS-${1}-setup.exe'
+        if (-not $Unreleased) {
+            $null = Edit-Text -Path $notesFile -What "the Unreleased date" -Optional `
+                -Pattern '(\*\*Release date:\*\*\s*)Unreleased' -Replacement ('${1}' + $today)
+        }
     }
 }
 
-# 11. Administrator helper version (independent of the app version)
-Write-Host ""
+# 11. ui/src/pages/Settings.tsx: release-notes import and the version fallbacks
+$settingsPath = "ui/src/pages/Settings.tsx"
+$null = Edit-Text -Path $settingsPath -What "the release-notes import" -Expect 1 `
+    -Pattern "(release-notes/v)[^/'""]+?(\.md\?raw)" `
+    -Replacement ('${1}' + $Version + '${2}')
+$null = Edit-Text -Path $settingsPath -What "the version fallbacks (version || 'x.y.z')" `
+    -Pattern "(version\s*\|\|\s*')[^']*(')" `
+    -Replacement ('${1}' + $Version + '${2}')
+
+# 12. User manuals (both copies): header, Table of Contents, Section 17 heading
+$manuals = @("crates/ols-core/catalog/user_manual.md", "docs/OLS_USER_MANUAL.md")
+# GitHub-style anchor of the version: lowercase, only letters, digits and '-'
+$anchor = ($Version.ToLower() -replace '[^a-z0-9-]', '')
+foreach ($manual in $manuals) {
+    $null = Edit-Text -Path $manual -What "the '> **Version:**' header" -Expect 1 `
+        -Pattern '(?m)^(>\s*\*\*Version:\*\*\s*)\S+' `
+        -Replacement ('${1}' + $Version)
+    $null = Edit-Text -Path $manual -What "the Section 17 Table of Contents line" -Expect 1 `
+        -Pattern "(?m)^(17\.\s*\[Version )\S+( Specific Notes & What's New\]\(#17-version-)[0-9a-z-]*?(-specific-notes--whats-new\))" `
+        -Replacement ('${1}' + $Version + '${2}' + $anchor + '${3}')
+    $null = Edit-Text -Path $manual -What "the Section 17 heading" -Expect 1 `
+        -Pattern "(?m)^(##\s*17\.\s*Version )\S+( Specific Notes & What's New)" `
+        -Replacement ('${1}' + $Version + '${2}')
+    if ((Get-Text $manual) -notmatch "(?m)^###\s*What's New in v$escapedVersion\b") {
+        $devMark = if ($Unreleased) { ' (in development)' } else { '' }
+        $null = Edit-Text -Path $manual -What "the Section 17 heading line" -Expect 1 `
+            -Pattern "(?m)^(##\s*17\.\s*Version \S+ Specific Notes & What's New\r?\n)" `
+            -Replacement ('${1}' + "`n### What's New in v$Version$devMark`n- `n")
+    }
+    # Older versions are released once a newer one is bumped; the current one is
+    # released when the bump runs without -Unreleased.
+    $null = Edit-Text -Path $manual -What "older '(in development)' marks" -Optional `
+        -Pattern "(?m)^(###\s*What's New in v(?!$escapedVersion\b)\S+) \(in development\)" `
+        -Replacement '${1}'
+    if (-not $Unreleased) {
+        $null = Edit-Text -Path $manual -What "the '(in development)' mark" -Optional `
+            -Pattern "(?m)^(###\s*What's New in v$escapedVersion) \(in development\)" `
+            -Replacement '${1}'
+    }
+}
+if ((Get-Text $manuals[0]) -cne (Get-Text $manuals[1])) {
+    Write-Host "[!] The two manuals are not identical after the update (AGENTS.md section 5 requires it)." -ForegroundColor Yellow
+    Write-Host "    Compare them: git diff --no-index $($manuals[0]) $($manuals[1])" -ForegroundColor Yellow
+    Write-Host ""
+}
+
+# 13. Landing page: download asset names, the version fact badge and the footer.
+#     The release highlights are content and stay as they are.
+$null = Edit-Text -Path "index.html" -What "the download asset names (OLS-x.y.z-setup.exe / portable zip / SHA256SUMS)" `
+    -Pattern ('OLS-' + $anyVersion + '-(setup\.exe|portable-win-x64\.zip|SHA256SUMS\.txt)') `
+    -Replacement ("OLS-$Version-" + '${1}')
+$null = Edit-Text -Path "index.html" -What "the version fact badge (a line holding only vX.Y.Z)" -Expect 1 `
+    -Pattern ('(?m)^(\s*)v' + $anyVersion + '(\r?)$') `
+    -Replacement ('${1}v' + $Version + '${2}')
+$null = Edit-Text -Path "index.html" -What "the footer version (<span>OLS x.y.z $midDot ...)" -Expect 1 `
+    -Pattern ('(<span>OLS )' + $anyVersion + "( $midDot )") `
+    -Replacement ('${1}' + $Version + '${2}')
+if (Test-RepoFile "website/index.html") {
+    $null = Edit-Text -Path "website/index.html" -What "download asset names" -Optional `
+        -Pattern ('OLS-' + $anyVersion + '-(setup\.exe|portable-win-x64\.zip|SHA256SUMS\.txt)') `
+        -Replacement ("OLS-$Version-" + '${1}')
+}
+
+# 14. Administrator helper (its own version)
 Write-Host "Administrator helper version:" -ForegroundColor Cyan
-if (-not [string]::IsNullOrWhiteSpace($HelperVersion)) {
-    Set-HelperVersion $HelperVersion.Trim()
-} else {
-    $needsBump = Show-HelperCheck
-    if ($needsBump -and $versionPrompted -and -not $DryRun) {
-        $answer = Read-Host "New helper version (blank = keep $(Get-CurrentHelperVersion))"
-        if (-not [string]::IsNullOrWhiteSpace($answer)) {
-            Set-HelperVersion $answer.Trim()
-        }
-    }
-}
+$interactive = $versionPrompted -and -not $Force -and -not $DryRun
+Update-Helper $Version $interactive
 
-# 12. Lockfile integrity verification via cargo metadata
-if (-not $SkipLockCheck -and -not $DryRun) {
-    $cargoCmd = Get-Command cargo -ErrorAction SilentlyContinue
-    if ($cargoCmd) {
-        Write-Host ""
-        Write-Host "Verifying Cargo.lock consistency with workspace metadata..." -ForegroundColor Gray
-        $metaOutput = & cargo metadata --format-version 1 --no-deps 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Diagnostic -Problem "Cargo metadata check failed after updating Cargo.lock." `
-                -Cause ($metaOutput -join "`n") `
-                -Fix "Run 'cargo check --workspace' manually to inspect the error."
-            exit 1
-        }
-        Write-Host "  [OK] Cargo workspace metadata and lockfile verified." -ForegroundColor Green
-    }
-}
+# 15. Write everything (every step above succeeded)
+Write-Host ""
+Write-Host "Files:" -ForegroundColor Cyan
+Write-Pending
+
+# 16. Lockfile integrity: --locked fails if Cargo.lock no longer matches the manifests.
+Invoke-LockCheck
 
 Write-Host ""
 Write-Host "=== Version bump to $Version complete! ===" -ForegroundColor Green
-Write-Host "    Administrator helper version: $(Get-CurrentHelperVersion)" -ForegroundColor Gray
+Write-Host ""
+Write-Host "Still to do by hand:" -ForegroundColor Cyan
+Write-Host "  - release-notes/v$Version.md and CHANGELOG.md: the actual bullets"
+Write-Host "  - Both manuals: the content of Section 17 ('What's New in v$Version')"
+Write-Host "  - index.html: the release highlights section (it still describes the previous release)"
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Review changes:        git diff"
-Write-Host "  2. Run quality gates:     cargo fmt --all"
-Write-Host "                            cargo clippy -p ols-core -p ols-helper --all-targets"
-Write-Host "                            cargo test -p ols-core -p ols-helper"
-Write-Host "                            cd ui && npm run lint && npm run build"
-Write-Host "  3. Update specs:          specs/runtime.md (log line + file counts) and specs/full_documentation.md"
-Write-Host "  4. Commit:                git commit -am `"chore(release): bump version to $Version`""
+Write-Host "  2. Run quality gates:     scripts\run-checks.bat"
+Write-Host "  3. Update specs:          specs/runtime.md log line (AGENTS.md section 1)"
+Write-Host "  4. Commit:                git commit -am `"chore: bump version to $Version`""
 Write-Host "  5. Tag and publish:       git tag v$Version"
 Write-Host "                            scripts\build-installer.bat full"
 Write-Host "                            scripts\upload-release.bat v$Version full"

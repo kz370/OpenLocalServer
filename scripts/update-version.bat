@@ -5,26 +5,38 @@ rem OpenLocalServer Version Update Script
 rem
 rem Updates the version across all project manifests, configurations, lockfiles,
 rem documentation, changelog, and release notes:
-rem   - Cargo.toml ([workspace.package] version)
+rem   - Cargo.toml ([workspace.package] version; olsc and ols-mcp use it too)
 rem   - src-tauri/tauri.conf.json (version)
 rem   - ui/package.json (version)
 rem   - ui/package-lock.json (version in root and packages[""])
-rem   - Cargo.lock (ols-cli, ols-core, ols-helper, ols-mcp, openlocalserver)
-rem   - README.md (version badge)
+rem   - Cargo.lock (ols-cli, ols-core, ols-mcp, openlocalserver)
+rem   - README.md (version badge, installer name in the Download section)
 rem   - CHANGELOG.md (adds [version] section if missing)
 rem   - release-notes/v<version>.md (draft template if missing)
-rem   - crates/ols-core/src/elevate.rs ADMIN_HELPER_VERSION (only with -HelperVersion)
+rem   - ui/src/pages/Settings.tsx (release-notes import, version fallbacks)
+rem   - crates/ols-core/catalog/user_manual.md and docs/OLS_USER_MANUAL.md
+rem     (Version header, Table of Contents, Section 17 heading)
+rem   - index.html (download asset names, version badge, footer)
 rem
-rem The administrator helper version is separate from the app version. An app
-rem bump never changes it; the script warns when helper code changed since it
-rem was last bumped.
+rem The administrator helper has its own version (crates/ols-helper/Cargo.toml +
+rem ADMIN_HELPER_VERSION in elevate.rs). -Helper auto (default) moves it to the app
+rem version only when helper code changed since its last bump; -Helper bump|keep
+rem decides for you; -HelperVersion <x.y.z> sets it exactly.
+rem
+rem Nothing is written unless every expected piece of text is found.
+rem
+rem A new helper version makes Settings offer a one-time elevated update, so the
+rem helper must not change without a reason.
 rem
 rem Usage:
 rem   scripts\update-version.bat [version] [options]
 rem   update-version.bat 2.3.0
 rem   update-version.bat 2.3.0 -DryRun
-rem   update-version.bat 2.3.0 -HelperVersion 2.3.0   (app + helper)
-rem   update-version.bat -HelperVersion 2.3.0         (helper only)
+rem   update-version.bat 2.3.0 -Unreleased             (start a release branch)
+rem   update-version.bat 2.3.0 -Force                  (release day: set the dates)
+rem   update-version.bat 2.3.0 -Helper bump           (app + helper)
+rem   update-version.bat 2.3.0 -Helper keep           (app only)
+rem   update-version.bat -HelperVersion 2.3.1         (helper only)
 rem   update-version.bat (interactive mode)
 rem ============================================================================
 
