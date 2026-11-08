@@ -13,7 +13,7 @@ const ACCESS_DENIED: i32 = 5;
 /// Version of the privileged helper protocol/binary, independent of the OLS app release.
 /// Bump only when `ols-helper` changes in a way that requires replacing the installed
 /// administrator copy. App-only releases must not trigger another UAC update prompt.
-pub const ADMIN_HELPER_VERSION: &str = "2.8.0";
+pub const ADMIN_HELPER_VERSION: &str = "2.12.0";
 
 /// Where the helper binary lives: `OLS_HELPER_PATH`, then a freshly built copy in the
 /// workspace `target/release` or `target/debug` (so a dev build that rebuilt the helper

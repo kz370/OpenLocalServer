@@ -15,7 +15,7 @@ import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import releaseNotes from '../../../release-notes/v2.11.0.md?raw'
+import releaseNotes from '../../../release-notes/v2.12.0.md?raw'
 import { Select, SettingRow, SwitchRow, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand, requestExit } from '@/core'
@@ -404,7 +404,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (section !== 'manual') return
-    void runCommand({ type: 'get_app_guide', version: version || '2.11.0' }).then((r) => {
+    void runCommand({ type: 'get_app_guide', version: version || '2.12.0' }).then((r) => {
       if (r.type === 'app_guide') {
         setManual(r.markdown)
         manualCache.set(r.markdown)
@@ -1014,7 +1014,7 @@ export function SettingsPage() {
                     </CardDescription>
                   </div>
                   <Badge variant="outline" className="text-xs px-2.5 py-0.5 w-fit border-border/80">
-                    v{version || '2.11.0'}
+                    v{version || '2.12.0'}
                   </Badge>
                 </div>
               </CardHeader>
@@ -1037,7 +1037,7 @@ export function SettingsPage() {
                       )}
                       onClick={() => setManualTab('notes')}
                     >
-                      <Sparkles className="size-4 shrink-0 text-primary" /> {`Release Notes (v${version || '2.11.0'})`}
+                      <Sparkles className="size-4 shrink-0 text-primary" /> {`Release Notes (v${version || '2.12.0'})`}
                     </button>
                   </div>
                   {manualTab === 'manual' && (
@@ -1066,7 +1066,7 @@ export function SettingsPage() {
                 {manualTab === 'notes' ? (
                   <ReleaseNotesView
                     markdown={activeManualMarkdown}
-                    currentVersion={version || '2.11.0'}
+                    currentVersion={version || '2.12.0'}
                   />
                 ) : (
                   <div className="flex-1 rounded-xl border border-border/70 bg-card/40 p-5 text-sm leading-relaxed overflow-y-auto min-h-[350px] max-h-[calc(100vh-280px)]">

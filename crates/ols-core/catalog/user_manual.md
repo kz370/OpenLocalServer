@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.10.0
+> **Version:** 2.12.0
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Binary:** `olsc`  
@@ -26,7 +26,7 @@
 14. [AI Assistant & Model Context Protocol (MCP)](#14-ai-assistant--model-context-protocol-mcp)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
 16. [Keyboard Shortcuts, Settings, Themes & Documentation](#16-keyboard-shortcuts-settings-themes--documentation)
-17. [Version 2.10.0 Specific Notes & What's New](#17-version-2100-specific-notes--whats-new)
+17. [Version 2.12.0 Specific Notes & What's New](#17-version-2120-specific-notes--whats-new)
 
 ---
 
@@ -361,9 +361,12 @@ olsc guide
 
 ---
 
-## 17. Version 2.10.0 Specific Notes & What's New
+## 17. Version 2.12.0 Specific Notes & What's New
 
-### What's New in v2.11.0 (in development)
+### What's New in v2.12.0 (in development)
+- 
+
+### What's New in v2.11.0
 - **Dockerize a project:** **Docker → Compose → From a project…**, or right-click a project or site → **Dockerize…**. OLS looks at the project (PHP, Node, Python, Go, Rust, Ruby, Java, .NET or a static site), shows what it found, then shows the Dockerfile, compose file and .dockerignore before it writes anything. The project is copied into the image, so it is fast on Windows. Choose **Development** (edits are synced into the container with **Create and watch**) or **Production** (a small multi-stage image that runs as a non-root user). Tick the services your project needs (MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch, Mailpit, Adminer): OLS adds them as version-pinned images, generates their passwords and keeps them in the Windows credential store, and passes your app the connection settings. For PHP it adds the extensions the project asks for. Existing files are never overwritten. OLS generated these files from what it could detect in your project. They are a starting point, not a guaranteed working setup. Review them, then build and test before you rely on them. Hide the right-click entry in Settings → Sidebar; it is also hidden when the Docker page is hidden from the sidebar.
 - **Site bundles keep Docker details:** an exported site keeps its Docker link, and its compose file when you include Project files. Passwords are never included: after importing, open Docker → Compose → Passwords, or recreate the stack. OLS does not start anything on import.
 - **Warnings for Docker sites:** the Dashboard and Repair tell you when a site's container is stopped (press **Start**), missing, or when Docker is not running. OLS only asks Docker when a site is linked to a container, and never starts a container on its own.

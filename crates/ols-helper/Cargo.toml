@@ -1,7 +1,7 @@
 [package]
 name = "ols-helper"
 description = "OLS privileged helper: a closed set of validated system-file commands"
-version = "2.8.0" # = ADMIN_HELPER_VERSION; scripts/update-version.bat keeps them equal
+version = "2.12.0" # = ADMIN_HELPER_VERSION; scripts/update-version.bat keeps them equal
 edition.workspace = true
 license.workspace = true
 
