@@ -14,6 +14,7 @@ Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.
 - **Free up space:** Projects → Free up space finds `node_modules`, `vendor` and build caches in projects you have not used for a while and deletes the ones you pick (they can be rebuilt any time). `olsc project reclaim` does the same from the command line.
 - **PHP upgrade check:** before switching a site to a newer PHP, OLS checks its Composer packages, extensions and every PHP file with the new version, then switches with one click (and back). `olsc php check-upgrade <site> <version>` does the same from the command line.
 - **Bring your sites from Laragon, XAMPP or WampServer:** the import dialog now also lists their sites and adds the ones you pick, with trusted HTTPS. Their files and settings are not changed.
+- **Faster installs on Windows:** Settings → Performance can exclude your project folders from Windows Defender's real-time scan (with a clear warning, and only folders OLS knows), and explains Dev Drive.
 
 ## [2.11.0] — 2026-11-08
 

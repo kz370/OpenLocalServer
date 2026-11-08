@@ -310,3 +310,6 @@ PhpUpgradeDialog (ui/src/components/site/PhpUpgradeDialog.tsx) | Report dialog w
 olsc php check-upgrade (crates/ols-cli/src/commands/services.rs) | `<hostname> <version>`; exit 1 on blockers.
 migrate_sites (crates/ols-core/src/migrate_sites.rs) | §172 site import: `SiteImportCandidate`, `SiteImportChoice`, `RawVhost`, parsers, `scan_roots`, `Inner::list_site_import_candidates`, `Inner::import_site_candidates`.
 SiteImportPanel (ui/src/components/SiteImportPanel.tsx) | Sites tab in MigrateDialog.
+defender (crates/ols-core/src/defender.rs) | §173 Defender exclusions: `DefenderState`, `DevDriveInfo`, `DefenderStatus`, `valid_exclusion_path`, `pick_suggestions`, `Inner::defender_status`, `add_defender_exclusion`, `remove_defender_exclusion`, `defender_advice`. Setting `defender.excluded_by_ols`.
+ols-helper defender-exclude-add / defender-exclude-remove (crates/ols-helper/src/main.rs) | Validated Add-MpPreference / Remove-MpPreference for one existing folder.
+PerformanceSettings (ui/src/components/settings/PerformanceSettings.tsx) | Settings → Performance card.

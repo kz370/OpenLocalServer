@@ -127,6 +127,8 @@ pub struct Inner {
     pub pending_add_project: Mutex<Option<String>>,
     /// §170: the last Free up space scan.
     pub reclaim: Mutex<Option<crate::reclaim::ReclaimReport>>,
+    /// §173: the last Defender state read by the Settings card (Diagnostics never runs PowerShell).
+    pub defender_cache: Mutex<Option<crate::defender::DefenderState>>,
     /// §171: newest PHP upgrade report per site.
     pub php_upgrade: Mutex<HashMap<String, crate::php_upgrade::PhpUpgradeReport>>,
     pub(crate) pending_site_undo: Mutex<HashMap<String, PendingSiteUndo>>,
@@ -323,6 +325,7 @@ impl Inner {
             auto_fix_failures: Mutex::new(HashMap::new()),
             pending_add_project: Mutex::new(None),
             reclaim: Mutex::new(None),
+            defender_cache: Mutex::new(None),
             php_upgrade: Mutex::new(HashMap::new()),
             pending_site_undo: Mutex::new(HashMap::new()),
             project_events,

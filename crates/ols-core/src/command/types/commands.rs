@@ -603,6 +603,15 @@ pub enum CoreCommand {
     /// §168: database copies saved before migrations, newest first.
     /// §170: scans registered projects for folders that can be rebuilt (background task).
     /// §171: what would break if this site ran `target` (background task).
+    /// §173: Defender state, OLS's exclusions, suggestions and Dev Drive info (runs PowerShell).
+    GetDefenderStatus,
+    /// §173: excludes one suggested folder (needs the helper; consent happens in the UI).
+    AddDefenderExclusion {
+        path: String,
+    },
+    RemoveDefenderExclusion {
+        path: String,
+    },
     CheckPhpUpgrade {
         hostname: String,
         target: String,

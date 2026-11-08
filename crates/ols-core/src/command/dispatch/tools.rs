@@ -14,6 +14,37 @@ impl Core {
         let mut unhandled = None;
         let outcome: Result<CoreResponse, CoreError> = (|| {
             let res = match command {
+                C::GetDefenderStatus => {
+                    let s = i.defender_status();
+                    Ok(R::DefenderStatus {
+                        state: s.state,
+                        excluded_by_ols: s.excluded_by_ols,
+                        suggestions: s.suggestions,
+                        dev_drive: s.dev_drive,
+                    })
+                }
+                C::AddDefenderExclusion { path } => {
+                    tracing::info!(command = "add_defender_exclusion", path = %path);
+                    i.add_defender_exclusion(&path)?;
+                    let s = i.defender_status();
+                    Ok(R::DefenderStatus {
+                        state: s.state,
+                        excluded_by_ols: s.excluded_by_ols,
+                        suggestions: s.suggestions,
+                        dev_drive: s.dev_drive,
+                    })
+                }
+                C::RemoveDefenderExclusion { path } => {
+                    tracing::info!(command = "remove_defender_exclusion", path = %path);
+                    i.remove_defender_exclusion(&path)?;
+                    let s = i.defender_status();
+                    Ok(R::DefenderStatus {
+                        state: s.state,
+                        excluded_by_ols: s.excluded_by_ols,
+                        suggestions: s.suggestions,
+                        dev_drive: s.dev_drive,
+                    })
+                }
                 C::CheckPhpUpgrade { hostname, target } => {
                     let inner = i.clone();
                     let title = format!("Check {hostname} with PHP {target}");

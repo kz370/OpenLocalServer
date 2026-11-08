@@ -406,3 +406,6 @@ dispatch::ReclaimFolders | starts | task reclaim -> Inner::reclaim_folders -> re
 dispatch::CheckPhpUpgrade | starts | task php-upgrade-check -> Inner::check_php_upgrade -> exec::run_capture(target php.exe), composer.phar, PhpManager::extensions
 PhpUpgradeDialog | switches_with | update_domain + apply_web (same path as site settings)
 dispatch::ImportSiteCandidates | starts | task site-import -> Inner::import_site_candidates -> add_domain, ProjectStore::register_with_standalone, apply_web (once)
+Inner::add_defender_exclusion | requires | defender::check_add (suggestions only) -> elevate::run_helper(defender-exclude-add) -> ols-helper valid_exclusion_path
+diagnostics::check_defender | reads | Inner.defender_cache (no PowerShell)
+ols-mcp guard_raw_command | refuses | AddDefenderExclusion, RemoveDefenderExclusion

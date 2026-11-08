@@ -238,6 +238,19 @@ export interface GuardSnapshot {
   kind: string
 }
 
+/** Windows Defender exclusions (§173). */
+export interface DefenderState {
+  available: boolean
+  realtime_on: boolean
+  error?: string | null
+}
+
+export interface DevDriveInfo {
+  path: string
+  file_system: string
+  is_dev_drive: boolean
+}
+
 /** Import sites from Laragon / XAMPP / WampServer (§172). */
 export interface SiteImportCandidate {
   source: string

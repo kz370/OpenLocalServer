@@ -222,6 +222,12 @@ pub enum CoreResponse {
     DbBackups {
         backups: Vec<crate::dbbackup::DbBackup>,
     },
+    DefenderStatus {
+        state: crate::defender::DefenderState,
+        excluded_by_ols: Vec<String>,
+        suggestions: Vec<String>,
+        dev_drive: Vec<crate::defender::DevDriveInfo>,
+    },
     SiteImportCandidates {
         candidates: Vec<crate::migrate_sites::SiteImportCandidate>,
     },

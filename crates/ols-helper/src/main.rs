@@ -8,6 +8,12 @@
 //!   hosts-remove                    delete that block
 //!   nrpt-add <.suffix> 127.0.0.1    make Windows resolve `*.suffix` through our local DNS
 //!   nrpt-remove <.suffix>           undo that
+//!   defender-exclude-add <path>     exclude one folder from Windows Defender's real-time scan
+//!   defender-exclude-remove <path>  take that exclusion out again
+//!
+//! A Defender exclusion is only accepted for an existing folder on a local drive that is not
+//! a system or profile folder (see `valid_exclusion_path`). Defender does not scan excluded
+//! folders in real time, so malware that lands in one is not caught there.
 //!
 //! Resident mode (see `service.rs`): `install-service` / `uninstall-service` (run elevated,
 //! once) and `service` (started by Windows) serve the same commands over a local pipe, so
@@ -79,6 +85,77 @@ fn valid_suffix(suffix: &str) -> bool {
     })
 }
 
+/// Characters that could end a quoted PowerShell string or start another command.
+const EXCLUSION_BAD_CHARS: &[char] = &[
+    '\'', '"', '`', '$', ';', '&', '|', '<', '>', '%', '^', '*', '?',
+];
+
+/// The folders Defender exclusions must never cover (nor anything inside the first four).
+fn protected_exclusion_roots() -> (Vec<String>, Vec<String>) {
+    let env = |k: &str, d: &str| std::env::var(k).unwrap_or_else(|_| d.to_string());
+    let norm = |p: String| p.trim_end_matches('\\').to_lowercase();
+    let drive = env("SystemDrive", "C:");
+    let inside = vec![
+        norm(env("SystemRoot", r"C:\Windows")),
+        norm(env("ProgramFiles", r"C:\Program Files")),
+        norm(env("ProgramFiles(x86)", r"C:\Program Files (x86)")),
+        norm(env("ProgramData", r"C:\ProgramData")),
+    ];
+    let users = norm(format!(r"{drive}\Users"));
+    (inside, vec![users])
+}
+
+/// May `p` be added as a Defender exclusion? A local drive path to an existing folder, no
+/// characters that could break out of the PowerShell string, no `.`/`..` parts, not a drive
+/// root, not inside a system folder, and not a user profile root or its `AppData`.
+pub fn valid_exclusion_path(p: &str) -> bool {
+    let b = p.as_bytes();
+    if p.len() < 4 || p.len() > 240 {
+        return false;
+    }
+    if !(b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\') {
+        return false;
+    }
+    if p.chars()
+        .any(|c| c.is_control() || EXCLUSION_BAD_CHARS.contains(&c) || c == '/')
+    {
+        return false;
+    }
+    // `:` is only the drive separator (no alternate data streams).
+    if p[2..].contains(':') {
+        return false;
+    }
+    let trimmed = p.trim_end_matches('\\');
+    if trimmed.len() <= 2 {
+        return false; // a drive root
+    }
+    if trimmed[3..]
+        .split('\\')
+        .any(|c| c.is_empty() || c == "." || c == "..")
+    {
+        return false;
+    }
+    let lower = trimmed.to_lowercase();
+    let (inside, equal_only) = protected_exclusion_roots();
+    let at_or_in = |root: &str| lower == root || lower.starts_with(&format!("{root}\\"));
+    if inside.iter().any(|r| at_or_in(r)) {
+        return false;
+    }
+    for users in &equal_only {
+        if lower == *users {
+            return false;
+        }
+        if let Some(rest) = lower.strip_prefix(&format!("{users}\\")) {
+            let parts: Vec<&str> = rest.split('\\').collect();
+            // C:\Users\<name> itself, or C:\Users\<name>\AppData itself.
+            if parts.len() == 1 || (parts.len() == 2 && parts[1] == "appdata") {
+                return false;
+            }
+        }
+    }
+    Path::new(p).is_dir()
+}
+
 fn map_io(e: std::io::Error) -> HelperError {
     if e.kind() == std::io::ErrorKind::PermissionDenied {
         HelperError::AccessDenied(e.to_string())
@@ -119,6 +196,22 @@ pub fn execute(args: &[String], hosts_file: &Path) -> Result<(), HelperError> {
                 "Get-DnsClientNrptRule | Where-Object {{ $_.Comment -eq 'OpenLocalServer' -and $_.Namespace -contains '{suffix}' }} | Remove-DnsClientNrptRule -Force"
             )),
             _ => Err(HelperError::Rejected("usage: nrpt-remove .suffix".into())),
+        },
+        "defender-exclude-add" => match rest {
+            [path] if valid_exclusion_path(path) => {
+                powershell(&format!("Add-MpPreference -ExclusionPath '{path}'"))
+            }
+            _ => Err(HelperError::Rejected(
+                "usage: defender-exclude-add <existing folder on a local drive, not a system or profile folder>".into(),
+            )),
+        },
+        "defender-exclude-remove" => match rest {
+            [path] if valid_exclusion_path(path) => {
+                powershell(&format!("Remove-MpPreference -ExclusionPath '{path}'"))
+            }
+            _ => Err(HelperError::Rejected(
+                "usage: defender-exclude-remove <folder>".into(),
+            )),
         },
         other => Err(HelperError::Rejected(format!("unknown command: {other}"))),
     }
@@ -220,6 +313,66 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("127.0.0.1 localhost"));
         assert!(!text.contains("shop.test"));
+    }
+
+    #[test]
+    fn defender_exclusions_reject_anything_that_could_hijack_the_command() {
+        let (_dir, path) = hosts_in_temp("");
+        for bad in [
+            "C:\\x'; calc; '",
+            "C:\\x$(calc)",
+            "C:\\x\\..\\Windows",
+            "\\\\server\\share",
+            "\\\\?\\C:\\x",
+            "C:\\",
+            "C:",
+            "C:\\Windows\\Temp",
+            "C:\\Windows",
+            "C:\\Program Files\\x",
+            "C:\\ProgramData\\x",
+            "C:\\Users",
+            "C:\\Users\\bob",
+            "C:\\Users\\bob\\AppData",
+            "C:\\x`whoami",
+            "C:\\x&calc",
+            "C:\\x\\file.txt:stream",
+            "relative\\path",
+            "",
+        ] {
+            assert!(!valid_exclusion_path(bad), "{bad:?} must be refused");
+            for cmd in ["defender-exclude-add", "defender-exclude-remove"] {
+                assert!(
+                    matches!(
+                        execute(&args(&[cmd, bad]), &path),
+                        Err(HelperError::Rejected(_))
+                    ),
+                    "{cmd} {bad:?}"
+                );
+            }
+        }
+        // Wrong argument counts are rejected too.
+        assert!(matches!(
+            execute(&args(&["defender-exclude-add"]), &path),
+            Err(HelperError::Rejected(_))
+        ));
+        assert!(matches!(
+            execute(&args(&["defender-exclude-add", "C:\\a", "C:\\b"]), &path),
+            Err(HelperError::Rejected(_))
+        ));
+    }
+
+    #[test]
+    fn defender_exclusions_accept_an_ordinary_existing_folder() {
+        let dir = std::env::temp_dir().join(format!("ols-excl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.display().to_string();
+        let ok = valid_exclusion_path(&p);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(ok, "{p} should be accepted");
+        assert!(
+            !valid_exclusion_path(&p),
+            "a folder that does not exist is refused"
+        );
     }
 
     #[test]

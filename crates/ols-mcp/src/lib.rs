@@ -1404,6 +1404,11 @@ fn guard_raw_command(cmd: CoreCommand) -> Result<CoreCommand, String> {
              one, open it in the OLS app."
                 .to_string(),
         ),
+        C::AddDefenderExclusion { .. } | C::RemoveDefenderExclusion { .. } => Err(
+            "ols_run_command cannot change Windows Defender exclusions: they weaken protection, \
+             so a person has to agree in OLS (Settings -> Performance)."
+                .to_string(),
+        ),
         C::StartTunnel { id, .. } => Ok(C::StartTunnel {
             id,
             confirm_exposure: false,

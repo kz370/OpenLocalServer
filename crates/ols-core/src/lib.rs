@@ -21,6 +21,7 @@ pub mod db;
 pub mod dbbackup;
 pub mod dbtools;
 pub mod ddns;
+pub mod defender;
 pub mod detection;
 pub mod diagnostics;
 pub mod dns;

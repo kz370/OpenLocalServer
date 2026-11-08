@@ -237,6 +237,7 @@ Docker is optional: OLS never installs it, and nothing Docker-related runs until
 - **Dockerize a project:** one click makes a Dockerfile, a compose file and a `.dockerignore` for a PHP, Node, Python, Go, Rust, Ruby, Java, .NET or static project. The project is copied into the image, Development mode syncs your edits with `docker compose watch`, Production mode builds a lean non-root image, and the services it finds (database, Redis, queue, mail, search) are added as pinned images with generated passwords, after showing what OLS detected and the files. They are a starting point, not a guaranteed setup, and nothing is overwritten. Right-click a project or site → **Dockerize…** (hide it in Settings → Sidebar).
 - **Connect to OLS:** One switch per stack lets its containers open your OLS sites by name, trust OLS's local HTTPS certificate (the certificate only, mounted read-only), and reach OLS's MariaDB, Redis and Mailpit through `host.docker.internal`. OLS adds a generated override when it runs the stack; your compose file is not changed.
 - **A site for any container:** **Create site** gives a container a local domain with trusted HTTPS (a reverse proxy to its published port). If the container comes back on another port, the site follows it.
+- **Faster installs on Windows:** optional, consent-based Windows Defender exclusions for project folders (Settings → Performance), plus a Dev Drive hint. The elevated helper validates every path.
 
 ### 📊 Dashboard & Monitoring
 

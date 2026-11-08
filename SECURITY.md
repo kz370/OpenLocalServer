@@ -19,3 +19,14 @@ about the following are especially welcome:
 - Downloads that skip checksum verification.
 - Quick Apps or Quick Commands running something the user did not approve.
 - Secrets appearing in logs, configs or exports.
+
+## Windows Defender exclusions (2.12.0)
+
+Settings → Performance can ask the elevated helper to exclude folders from Windows Defender's real-time scan, which
+makes `npm install` and `composer install` faster. The helper has two commands for this, `defender-exclude-add` and
+`defender-exclude-remove`, each taking exactly one folder. The helper refuses anything that is not an existing folder on
+a local drive, anything with characters that could change the PowerShell command, `.`/`..` parts, drive roots, system
+folders (Windows, Program Files, ProgramData), user profile roots and their `AppData`. OLS itself only adds folders it
+manages (project root folders, the sites folder, its data folder), only after a click in the app, and only removes
+exclusions it added. An excluded folder is not scanned in real time, so malware that lands there is not caught: only
+exclude folders with code you trust. Reports of the helper accepting a path it should refuse are in scope.

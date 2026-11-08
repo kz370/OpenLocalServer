@@ -95,6 +95,7 @@ impl Inner {
         self.check_php(&mut b);
         self.check_journal(&mut b);
         self.check_machine(&mut b);
+        self.check_defender(&mut b);
         if docker {
             self.check_docker(&mut b);
         }
@@ -518,6 +519,22 @@ impl Inner {
                     vec![],
                 );
             }
+        }
+    }
+
+    /// §173: Defender scans project folders while packages install. Uses only the state the
+    /// Settings card read earlier: Diagnostics never starts PowerShell.
+    fn check_defender(&self, b: &mut Builder) {
+        if self.defender_advice() {
+            b.add(
+                "perf:defender",
+                Severity::Info,
+                "Windows Defender scans your project folders while you install packages.",
+                "Real-time scanning makes npm and Composer installs slower.",
+                "Settings \u{2192} Performance explains the trade-off and can exclude them.",
+                None,
+                vec![],
+            );
         }
     }
 
