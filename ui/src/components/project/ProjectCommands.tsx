@@ -11,6 +11,7 @@ import { Tabs } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type CommandSource, type DiscoveredCommand, type HistoryEntry, type ProcessEvent, type ProcessState, type QuickCommand, runCommand } from '@/core'
 import { timeAgo, useAction } from '@/lib/hooks'
+import { announceGuardCopy } from '@/lib/migrationGuard'
 import { cn } from '@/lib/utils'
 import { waitForProcessExit } from '@/lib/wait'
 import { SOURCE_ICON, commandLine, quote, sourceCache } from '@/lib/commandHelpers'
@@ -125,6 +126,7 @@ export function ProjectCommands({ projectId, framework, onShowIssues }: { projec
   async function follow(res: Awaited<ReturnType<typeof runCommand>>, label: string) {
     const id = res.type === 'process_started' ? res.id : res.type === 'maybe_process' ? res.id : null
     if (id !== null) {
+      void announceGuardCopy(projectId)
       setOutput([])
       setTitle(label)
       setProcessState('starting')

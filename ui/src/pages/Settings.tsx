@@ -10,6 +10,7 @@ import { IgnoredFoldersCard } from '@/components/IgnoredFoldersCard'
 import { Markdown } from '@/components/ui/Markdown'
 import { ReleaseNotesView } from '@/components/ReleaseNotesView'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
+import { MigrationGuardSettings } from '@/components/project/BackupsPanel'
 import { AboutCard, AutoBackupCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
@@ -845,6 +846,15 @@ export function SettingsPage() {
                     title="Automatically fix safe problems"
                     hint="Fixes safe problems as soon as they are found: at startup and when projects or runtimes change. Fixes that may replace or remove data always ask first. A fix that did not work is not retried until you restart the app. Saved with the Save button below."
                   />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Databases</CardTitle>
+                  <CardDescription>Protects your data when a migration changes it.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <MigrationGuardSettings />
                 </CardContent>
               </Card>
               <ApiCard />

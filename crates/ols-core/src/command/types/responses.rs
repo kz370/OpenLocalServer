@@ -222,6 +222,9 @@ pub enum CoreResponse {
     DbBackups {
         backups: Vec<crate::dbbackup::DbBackup>,
     },
+    GuardSnapshots {
+        snapshots: Vec<crate::migration_guard::GuardSnapshot>,
+    },
     SqliteList {
         databases: Vec<SqliteInfo>,
     },

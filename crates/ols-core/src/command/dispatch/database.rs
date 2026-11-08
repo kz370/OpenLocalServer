@@ -105,6 +105,30 @@ impl Core {
                         text: safety.map(|p| p.display().to_string()).unwrap_or_default(),
                     })
                 }
+                C::ListGuardSnapshots { project_id } => Ok(R::GuardSnapshots {
+                    snapshots: crate::migration_guard::list(&i.paths, project_id.as_deref()),
+                }),
+                C::RewindGuardSnapshot { id } => {
+                    // Validate the id now so a bad one is refused before a task starts.
+                    let snap = crate::migration_guard::find(&i.paths, &id)?;
+                    tracing::info!(command = "rewind_guard_snapshot", id = %id);
+                    let inner = i.clone();
+                    let title = format!("Put back {}", snap.database);
+                    let target = id.clone();
+                    let tid = i.tasks.start("guard-rewind", &title, &target, 1, move |h| {
+                        h.begin_step("Restoring the saved copy");
+                        let r = crate::migration_guard::rewind(&inner, &id);
+                        if let Ok(text) = &r {
+                            h.result(text.clone());
+                        }
+                        crate::command::report(&h, r);
+                    });
+                    Ok(R::TaskStarted { id: tid })
+                }
+                C::DeleteGuardSnapshot { id } => {
+                    crate::migration_guard::delete(&i.paths, &id)?;
+                    Ok(R::Ok)
+                }
                 C::DeleteDbBackup { engine, file } => {
                     crate::dbbackup::delete(&i.paths, &engine, std::path::Path::new(&file))
                         .map_err(CoreError::ServiceError)?;

@@ -209,6 +209,9 @@ Manage all backend services from the **Databases** and **Services** pages:
   - Collapsed state persists across restarts via backend settings (`dashboard.services.collapsed_groups`) and browser storage.
   - Direct, color-coded action buttons (start: emerald, stop: destructive, restart: amber, reload: sky, logs: violet) with layout-stable states.
 
+### Migration guard
+Before OLS runs a command that changes a database's structure (for example `php artisan migrate`, `python manage.py migrate`, `npx prisma migrate dev`), it saves a copy of the project's database. A toast says "Saved <database> before the laravel migration" with a **Rewind** button. Open the project's **Backups** tab → **Before migrations** to see every copy, **Rewind** one (OLS saves the current state first, so a rewind can be undone) or delete it. OLS keeps the newest 10 copies per database. If the copy cannot be made (the database is not running, for example) the command does not start and OLS tells you how to fix it. Databases bigger than the size limit are not copied. Turn it off or change the limit in **Settings → Databases**. Commands typed into the built-in terminal are not covered. From the command line: `olsc db guard list` and `olsc db guard rewind <id>`.
+
 ---
 
 ## 10. Public Tunnels & Webhook Inspection
@@ -364,7 +367,7 @@ olsc guide
 ## 17. Version 2.12.0 Specific Notes & What's New
 
 ### What's New in v2.12.0 (in development)
-- 
+- **Migration guard:** before OLS runs a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI), it saves the project's database. **Rewind** in the toast or in the project's Backups tab puts it back. Turn it off, or set the size limit, in Settings → Databases. Commands typed into the built-in terminal are not covered.
 
 ### What's New in v2.11.0
 - **Dockerize a project:** **Docker → Compose → From a project…**, or right-click a project or site → **Dockerize…**. OLS looks at the project (PHP, Node, Python, Go, Rust, Ruby, Java, .NET or a static site), shows what it found, then shows the Dockerfile, compose file and .dockerignore before it writes anything. The project is copied into the image, so it is fast on Windows. Choose **Development** (edits are synced into the container with **Create and watch**) or **Production** (a small multi-stage image that runs as a non-root user). Tick the services your project needs (MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch, Mailpit, Adminer): OLS adds them as version-pinned images, generates their passwords and keeps them in the Windows credential store, and passes your app the connection settings. For PHP it adds the extensions the project asks for. Existing files are never overwritten. OLS generated these files from what it could detect in your project. They are a starting point, not a guaranteed working setup. Review them, then build and test before you rely on them. Hide the right-click entry in Settings → Sidebar; it is also hidden when the Docker page is hidden from the sidebar.

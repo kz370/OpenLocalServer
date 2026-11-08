@@ -600,6 +600,18 @@ pub enum CoreCommand {
         engine: String,
         file: String,
     },
+    /// §168: database copies saved before migrations, newest first.
+    ListGuardSnapshots {
+        #[serde(default)]
+        project_id: Option<String>,
+    },
+    /// §168: puts a saved copy back (background task `guard-rewind`).
+    RewindGuardSnapshot {
+        id: String,
+    },
+    DeleteGuardSnapshot {
+        id: String,
+    },
     ListSqlite,
     DetectSqlite {
         project_id: String,

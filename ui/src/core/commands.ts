@@ -182,6 +182,9 @@ export type CoreCommand =
   | { type: 'list_db_backups'; engine: string; database: string | null }
   | { type: 'restore_database'; engine: string; database: string; file: string }
   | { type: 'delete_db_backup'; engine: string; file: string }
+  | { type: 'list_guard_snapshots'; project_id?: string | null }
+  | { type: 'rewind_guard_snapshot'; id: string }
+  | { type: 'delete_guard_snapshot'; id: string }
   | { type: 'create_db_user'; engine: string; user: string; password: string; database: string }
   | { type: 'list_db_users'; engine: string }
   | { type: 'get_connection_info'; engine: string; database: string | null; path: string | null }

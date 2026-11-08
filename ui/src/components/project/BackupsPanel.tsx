@@ -2,6 +2,7 @@ import { save, open } from '@tauri-apps/plugin-dialog'
 import { Camera, Copy, Download, History, Timer, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
 import { ErrorCard } from '@/components/ErrorCard'
 import { SaveButton } from '@/components/SaveButton'
 import { Spinner } from '@/components/Spinner'
@@ -9,10 +10,11 @@ import { CronFields } from '@/components/ui/cron-fields'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Select, Toggle } from '@/components/ui/form'
+import { Field, Select, SwitchRow, Toggle } from '@/components/ui/form'
 import { Input, NumberInput } from '@/components/ui/input'
-import { type AutoBackupSiteSettings, type AutoBackupStatus, type CloneResult, type Diagnostic, type Project, type RestoreOptions, type RestoreResult, type SnapshotInfo, type SnapshotOptions, runCommand } from '@/core'
+import { type AutoBackupSiteSettings, type AutoBackupStatus, type CloneResult, type Diagnostic, type GuardSnapshot, type Project, type RestoreOptions, type RestoreResult, type SnapshotInfo, type SnapshotOptions, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
+import { asDiagnostic } from '@/lib/diagnostic'
 import { formatBytes, timeAgo, useAction } from '@/lib/hooks'
 
 /** §130–132, §158: backups of a project — the automatic plan, snapshots, restoring,
@@ -39,6 +41,8 @@ export function BackupsPanel({ project }: { project: Project }) {
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
       <AutoBackupSection project={project} onChanged={load} />
+
+      <GuardSection project={project} />
 
       <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
         <h3 className="flex items-center gap-2 text-sm font-medium">
@@ -552,5 +556,138 @@ export function CloneDialog({ project, onClose }: { project: Project; onClose: (
         )}
       </div>
     </Dialog>
+  )
+}
+
+/**
+ * §168: the database copies OLS saved just before a migration. Rewind puts one back (the
+ * current state is saved first, so a rewind can be undone too).
+ */
+function GuardSection({ project }: { project: Project }) {
+  const [copies, setCopies] = useState<GuardSnapshot[]>([])
+  const [taskId, setTaskId] = useState<string | null>(null)
+  const action = useAction()
+  const { error, setError, run } = action
+
+  const load = useCallback(async () => {
+    const r = await runCommand({ type: 'list_guard_snapshots', project_id: project.id })
+    if (r.type === 'guard_snapshots') setCopies(r.snapshots)
+  }, [project.id])
+  useEffect(() => {
+    load().catch(setError)
+  }, [load, setError])
+
+  return (
+    <section className="flex flex-col gap-2">
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+      <h3 className="flex items-center gap-2 text-sm font-medium">
+        <History className="size-4" /> Before migrations · {copies.length}
+      </h3>
+      <p className="text-xs text-muted-foreground">
+        OLS saves the database before it runs a migration (Laravel, Symfony, Django, Prisma and others). Commands typed into the built-in terminal are not covered.
+      </p>
+      {copies.length === 0 && <p className="text-sm text-muted-foreground">No copies yet.</p>}
+      {copies.map((c) => (
+        <div key={c.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border px-3 py-2">
+          <div className="min-w-0">
+            <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+              {c.database}
+              <Badge variant="secondary">{c.kind}</Badge>
+              <span className="text-xs font-normal text-muted-foreground">
+                {timeAgo(c.created * 1000)} · {formatBytes(c.size)}
+              </span>
+            </p>
+            <p className="truncate text-xs text-muted-foreground" title={c.command}>
+              {c.command}
+            </p>
+          </div>
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={async () => {
+                const when = new Date(c.created * 1000).toLocaleString()
+                if (!(await confirmAction(`Put back ${c.database} as it was at ${when}? OLS saves the current state first, so this can be undone.`, 'Rewind database?', 'Rewind', 'amber'))) return
+                await run(`rewind:${c.id}`, async () => {
+                  const r = await runCommand({ type: 'rewind_guard_snapshot', id: c.id })
+                  if (r.type === 'task_started') setTaskId(r.id)
+                })
+              }}
+            >
+              <History /> Rewind
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8"
+              title="Delete this copy"
+              onClick={async () => {
+                if (await confirmAction(`Delete the saved copy of ${c.database}?`))
+                  await run(`gdel:${c.id}`, async () => {
+                    await runCommand({ type: 'delete_guard_snapshot', id: c.id })
+                    await load()
+                  })
+              }}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        </div>
+      ))}
+      <TaskOutputDialog taskId={taskId} onClose={() => setTaskId(null)} onFinished={() => void load()} />
+    </section>
+  )
+}
+
+/** §168: the Settings switch for Migration guard (used on the Settings page). */
+export function MigrationGuardSettings() {
+  const [enabled, setEnabled] = useState(true)
+  const [maxMb, setMaxMb] = useState<number | null>(1024)
+  const [error, setError] = useState<Diagnostic | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      const on = await runCommand({ type: 'get_setting', key: 'db.migration_guard' })
+      if (on.type === 'setting' && typeof on.value === 'boolean') setEnabled(on.value)
+      const mb = await runCommand({ type: 'get_setting', key: 'db.migration_guard.max_mb' })
+      if (mb.type === 'setting' && typeof mb.value === 'number') setMaxMb(mb.value)
+    })().catch(() => {})
+  }, [])
+
+  const save = async (key: string, value: boolean | number) => {
+    setError(null)
+    try {
+      await runCommand({ type: 'set_setting', key, value })
+    } catch (e) {
+      setError(asDiagnostic(e))
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+      <SwitchRow
+        checked={enabled}
+        onChange={(v) => {
+          setEnabled(v)
+          void save('db.migration_guard', v)
+        }}
+        title="Save the database before migrations"
+        hint="Covers commands run from OLS. Commands typed into the built-in terminal are not covered. If the copy cannot be made, the migration does not start."
+      />
+      <Field label="Skip the copy when the database is bigger than (MB)" hint="Bigger databases are not copied; the migration still runs.">
+        <NumberInput
+          label="Size limit in megabytes"
+          value={maxMb}
+          min={1}
+          disabled={!enabled}
+          onChange={(v) => {
+            setMaxMb(v)
+            if (v !== null && v > 0) void save('db.migration_guard.max_mb', v)
+          }}
+          className="h-8 w-32"
+        />
+      </Field>
+    </div>
   )
 }

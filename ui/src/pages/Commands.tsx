@@ -18,6 +18,7 @@ import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type CommandSource, type DiscoveredCommand, type HistoryEntry, type ProcessEvent, type ProcessState, type Project, type QuickCommand, runCommand } from '@/core'
 import { timeAgo, useAction, usePoll } from '@/lib/hooks'
+import { announceGuardCopy } from '@/lib/migrationGuard'
 import { createPersistentCache } from '@/lib/cache'
 import { cn } from '@/lib/utils'
 import { SOURCE_ICON, commandLine, quote, sourceCache } from '@/lib/commandHelpers'
@@ -263,6 +264,7 @@ export function CommandsPage() {
   async function follow(res: Awaited<ReturnType<typeof runCommand>>, label: string) {
     const id = res.type === 'process_started' ? res.id : res.type === 'maybe_process' ? res.id : null
     if (id !== null) {
+      void announceGuardCopy(projectId)
       setOutput([])
       setTitle(label)
       setProcessState('starting')

@@ -356,6 +356,55 @@ fn rename_host(host: &str, old: &str, new: &str) -> String {
 }
 
 impl Inner {
+    /// The database a project's configuration points at, in the order that knows most: the
+    /// manifest, then a WordPress `wp-config.php`, then the `.env` keys Laravel and the rest
+    /// use. SQLite comes back as engine `sqlite` with the configured path as its name.
+    pub(crate) fn project_database(&self, project_id: &str) -> Option<DatabaseMeta> {
+        let project = self.ensure_project_available(project_id).ok()?;
+        let root = PathBuf::from(&project.path);
+        let declared = manifest::read_manifest(&root)
+            .ok()
+            .flatten()
+            .and_then(|m| m.database);
+        let declared = declared.or_else(|| {
+            crate::wordpress::database(&root).map(|(engine, name)| manifest::DatabaseManifest {
+                engine,
+                version: None,
+                name: Some(name),
+            })
+        });
+        let declared = declared.or_else(|| {
+            let conn = crate::setup::env_value(&root, "DB_CONNECTION")?;
+            let engine = match conn.as_str() {
+                "mysql" | "mariadb" => "mariadb",
+                "pgsql" | "postgres" | "postgresql" => "postgres",
+                "sqlite" => "sqlite",
+                "mongodb" => "mongodb",
+                _ => return None,
+            };
+            Some(manifest::DatabaseManifest {
+                engine: engine.into(),
+                version: None,
+                name: crate::setup::env_value(&root, "DB_DATABASE").filter(|n| !n.is_empty()),
+            })
+        });
+        let db = declared?;
+        let engine = match db.engine.as_str() {
+            "mysql" | "mariadb" => "mariadb",
+            "postgresql" => "postgres",
+            e => e,
+        };
+        Some(DatabaseMeta {
+            engine: engine.into(),
+            name: db
+                .name
+                .unwrap_or_else(|| crate::setup::db_name_for(&project.name)),
+            dump: None,
+        })
+    }
+}
+
+impl Inner {
     fn snapshots_dir(&self, project_id: &str) -> PathBuf {
         self.paths.data_dir().join("snapshots").join(project_id)
     }
@@ -419,53 +468,11 @@ impl Inner {
             .iter()
             .filter_map(|d| self.certs.info(&d.hostname))
             .collect();
-        let mut databases = Vec::new();
-        // A site's database is whatever its configuration points at, in the order that knows
-        // most: the manifest, then a WordPress `wp-config.php` (no `.env` to read there), then
-        // the `.env` keys Laravel and the rest use. Missing it means an export that carries
-        // configuration but no data, and an import that silently restores nothing.
-        let declared = manifest::read_manifest(&root)
-            .ok()
-            .flatten()
-            .and_then(|m| m.database);
-        let declared = declared.or_else(|| {
-            crate::wordpress::database(&root).map(|(engine, name)| manifest::DatabaseManifest {
-                engine,
-                version: None,
-                name: Some(name),
-            })
-        });
-        let declared = declared.or_else(|| {
-            let conn = crate::setup::env_value(&root, "DB_CONNECTION")?;
-            let engine = match conn.as_str() {
-                "mysql" | "mariadb" => "mariadb",
-                "pgsql" | "postgres" | "postgresql" => "postgres",
-                "sqlite" => "sqlite",
-                "mongodb" => "mongodb",
-                _ => return None,
-            };
-            Some(manifest::DatabaseManifest {
-                engine: engine.into(),
-                version: None,
-                name: crate::setup::env_value(&root, "DB_DATABASE").filter(|n| !n.is_empty()),
-            })
-        });
-        if let Some(db) = declared {
-            let engine = match db.engine.as_str() {
-                "mysql" | "mariadb" => "mariadb",
-                "postgresql" => "postgres",
-                e => e,
-            };
-            if engine != "sqlite" {
-                databases.push(DatabaseMeta {
-                    engine: engine.into(),
-                    name: db
-                        .name
-                        .unwrap_or_else(|| crate::setup::db_name_for(&project.name)),
-                    dump: None,
-                });
-            }
-        }
+        let databases: Vec<DatabaseMeta> = self
+            .project_database(project_id)
+            .filter(|db| db.engine != "sqlite")
+            .into_iter()
+            .collect();
         let sqlite = self
             .sqlite
             .lock()
@@ -1755,6 +1762,30 @@ mod tests {
                 .is_file(),
             "the real manifest file is still restored"
         );
+    }
+
+    #[test]
+    fn project_database_follows_the_env_when_there_is_no_manifest() {
+        let (core, home) = core();
+        let dir = home.paths.root().join("pg-site");
+        let id = project(&core, &dir);
+        std::fs::remove_file(dir.join(".openlocalserver").join("environment.yaml")).unwrap();
+        std::fs::write(
+            dir.join(".env"),
+            "DB_CONNECTION=pgsql
+DB_DATABASE=shop
+",
+        )
+        .unwrap();
+        let db = core.inner().project_database(&id).unwrap();
+        assert_eq!((db.engine.as_str(), db.name.as_str()), ("postgres", "shop"));
+        std::fs::write(
+            dir.join(".env"),
+            "DB_CONNECTION=sqlite
+",
+        )
+        .unwrap();
+        assert_eq!(core.inner().project_database(&id).unwrap().engine, "sqlite");
     }
 
     fn core() -> (Core, crate::test_support::IsolatedHome) {

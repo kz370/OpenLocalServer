@@ -218,6 +218,7 @@ Grab the latest installer (`OLS-2.12.0-setup.exe`) from the [Releases page](http
 - **Service lifecycle & mail capture:** Background service supervision with TCP health checks, Mailpit outgoing mail capture per framework with `.env` configuration diffs.
 - **Custom services:** Start, stop, and watch any program like a built-in service, with its own arguments, port, and health check (never run through a shell).
 - **Resource limits:** Per-service limits on memory, CPU allocation, and process counts.
+- **Migration guard:** before a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI) OLS saves the project's database; **Rewind** puts it back. `olsc db guard list|rewind`, MCP `ols_list_migration_snapshots`.
 
 ### 🐳 Docker
 
@@ -269,6 +270,7 @@ Docker is optional: OLS never installs it, and nothing Docker-related runs until
   - **Runtimes:** `ols_list_runtimes`, `ols_install_runtime`, `ols_refresh_runtimes`.
   - **Services & Tunnels:** `ols_list_services`, `ols_start_service`, `ols_stop_service`, `ols_restart_service`, `ols_list_tunnels`, `ols_start_tunnel`, `ols_stop_tunnel`.
   - **Databases & Tables:** `ols_list_databases`, `ols_create_database`, `ols_list_tables`, `ols_execute_sql` (also callable as `ols_query_database`).
+  - **Migration guard:** `ols_list_migration_snapshots` lists the database copies saved before migrations (read-only).
   - **Web Server, Commands & Tasks:** `ols_apply_web`, `ols_validate_web`, `ols_run_command`, `ols_list_tasks`.
   - **Docker:** `ols_docker_status`, `ols_docker_start`, `ols_docker_list_containers`, `ols_docker_container_action`, `ols_docker_container_logs`, `ols_docker_container_details`, `ols_docker_container_update`, `ols_docker_create_site`, `ols_docker_compose_list`, `ols_docker_compose_check`, `ols_docker_compose_action`, `ols_docker_compose_connect`, `ols_docker_compose_presets`, `ols_docker_compose_create`. No tool removes or renames containers, and `ols_docker_compose_create` never replaces an existing file.
   - **Hidden sites:** `ols_unignore_site` brings back a site hidden with `.ols_ignore_site`.

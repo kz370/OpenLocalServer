@@ -12,6 +12,7 @@ Each MCP tool maps one-to-one to an OLS `CoreCommand`, so an LLM can discover an
 - **Services**: `ols_list_services`, `ols_start_service`, `ols_stop_service`, `ols_restart_service`
 - **Tunnels**: `ols_list_tunnels`, `ols_start_tunnel`, `ols_stop_tunnel`
 - **Databases**: `ols_list_databases`, `ols_create_database`, `ols_list_tables` (list tables in MariaDB/MySQL, PostgreSQL, or SQLite), `ols_execute_sql` (view table content, schema, or modify data and tables via SQL)
+- **Migration guard**: `ols_list_migration_snapshots` (database copies OLS saved before migrations; read-only, Rewind is app/CLI only)
 - **Web server**: `ols_apply_web`, `ols_validate_web`
 - **Tasks**: `ols_list_tasks`
 - **Projects**: `ols_unignore_site` (bring back a site hidden with `.ols_ignore_site`)

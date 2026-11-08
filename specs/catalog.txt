@@ -297,3 +297,8 @@ pin-pecl-hashes (scripts/pin-pecl-hashes.py) | Maintainer tool: walks downloads.
 pecl-pins (crates/ols-core/catalog/pecl-pins.json) | Embedded SHA-256 list of the only PECL builds the app installs.
 dev-mcp-bridge capability (src-tauri/dev-capabilities/mcp-bridge.json) | Debug-only `mcp-bridge:default`, added at runtime.
 nativeContextMenu (ui/src/lib/nativeContextMenu.ts) | Turns off the webview's own right-click menu app-wide (keepsNativeMenu: inputs, textareas, contenteditable and CodeMirror keep it); installed once in main.tsx.
+migration_guard (crates/ols-core/src/migration_guard.rs) | §168 Migration guard: `migration_kind`, `migration_in_line`, `take_guard_copy`, `list`, `find`, `delete`, `prune`, `rewind`, `GuardSnapshot`. Settings `db.migration_guard`, `.max_mb`, `.keep`.
+Inner::project_database (crates/ols-core/src/snapshots.rs) | The database a project's manifest, wp-config or .env points at (engine + name); shared by snapshots and Migration guard.
+olsc db (crates/ols-cli/src/commands/db.rs) | `db guard list [project]`, `db guard rewind <id>`.
+announceGuardCopy (ui/src/lib/migrationGuard.ts) | Toast with Rewind after a project command saved a database copy.
+GuardSection / MigrationGuardSettings (ui/src/components/project/BackupsPanel.tsx) | "Before migrations" list with Rewind and Delete; Settings → Databases switch and size limit.

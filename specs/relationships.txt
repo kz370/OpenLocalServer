@@ -397,3 +397,7 @@ PhpManager::install_extension | verifies_against | catalog/pecl-pins.json
 dispatch::SaveDockerComposeFile | requires | Inner::docker_compose_is_known (projects, connected set, engine config_files)
 ols-mcp ols_run_command | filtered_by | guard_raw_command
 TauriApp (debug) | add_capability | dev-capabilities/mcp-bridge.json
+Inner::spawn_project_process | calls | migration_guard::migration_kind, migration_guard::take_guard_copy (before supervisor.start)
+migration_guard::take_guard_copy | calls | Inner::project_database, dbbackup::dump_to, ServiceManager::run_sql_query
+dispatch::RewindGuardSnapshot | starts | task guard-rewind -> migration_guard::rewind -> dbbackup::restore
+ols-mcp ols_list_migration_snapshots | maps_to | ListGuardSnapshots

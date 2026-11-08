@@ -442,7 +442,7 @@ fn prune_plan(ctx: &Ctx, targets: PruneTargets) -> R<()> {
 }
 
 /// Waits for a background task and prints its steps; `--json` prints the start reply only.
-fn follow(ctx: &Ctx, started: CoreResponse) -> R<()> {
+pub(crate) fn follow(ctx: &Ctx, started: CoreResponse) -> R<()> {
     if ctx.print_json(&started) {
         return Ok(());
     }
@@ -486,7 +486,7 @@ fn follow(ctx: &Ctx, started: CoreResponse) -> R<()> {
     }
 }
 
-fn bytes(n: u64) -> String {
+pub(crate) fn bytes(n: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
     let mut v = n as f64;
     let mut i = 0;

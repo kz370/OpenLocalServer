@@ -224,6 +224,20 @@ export interface DbBackup {
   size: number
 }
 
+/** A database copy saved before a migration (§168). */
+export interface GuardSnapshot {
+  id: string
+  project_id: string
+  engine: string
+  database: string
+  file: string
+  /** Unix seconds. */
+  created: number
+  size: number
+  command: string
+  kind: string
+}
+
 export type PortStatusLite = 'free' | 'in_use'
 
 export type ServiceLifecycleState = 'starting' | 'stopping' | 'restarting' | 'running' | 'stopped' | 'error'

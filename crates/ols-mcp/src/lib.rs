@@ -282,6 +282,19 @@ fn mcp_tools() -> Vec<McpTool> {
             }),
         },
         McpTool {
+            name: "ols_list_migration_snapshots".into(),
+            description: Some(
+                "List the database copies OLS saved before migrations (Migration guard), newest first. 'project_id' is optional. Putting a copy back (Rewind) is done in the app or with `olsc db guard rewind`."
+                    .to_string(),
+            ),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "string", "description": "Optional project id from ols_list_projects." }
+                }
+            }),
+        },
+        McpTool {
             name: "ols_list_databases".into(),
             description: Some(
                 "List databases across engines (MariaDB/MySQL, PostgreSQL, SQLite). 'engine' is optional: if omitted, databases across all engines are listed."
@@ -1090,6 +1103,9 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
             confirm_exposure: false,
         },
         "ols_stop_tunnel" => C::StopTunnel { id: req_str!("id") },
+        "ols_list_migration_snapshots" => C::ListGuardSnapshots {
+            project_id: opt_str!("project_id"),
+        },
         "ols_list_databases" => {
             let engine = opt_str!("engine").unwrap_or_else(|| "mariadb".into());
             let engine_lower = engine.to_ascii_lowercase();
@@ -2646,6 +2662,26 @@ mod tests {
         let s = root.to_string_lossy();
         assert!(s.contains("custom-folder"));
         assert!(s.ends_with("public"));
+    }
+
+    #[test]
+    fn build_command_list_migration_snapshots() {
+        let all = build_command("ols_list_migration_snapshots", &json!({})).unwrap();
+        assert!(matches!(
+            all,
+            CoreCommand::ListGuardSnapshots { project_id: None }
+        ));
+        let one = build_command(
+            "ols_list_migration_snapshots",
+            &json!({ "project_id": "shop" }),
+        )
+        .unwrap();
+        match one {
+            CoreCommand::ListGuardSnapshots { project_id } => {
+                assert_eq!(project_id.as_deref(), Some("shop"))
+            }
+            _ => panic!("expected ListGuardSnapshots"),
+        }
     }
 
     #[test]

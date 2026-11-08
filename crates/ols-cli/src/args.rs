@@ -102,6 +102,9 @@ pub enum Cmd {
     /// Docker: containers, images, volumes and Compose stacks (nothing is deleted from here).
     #[command(subcommand)]
     Docker(DockerCmd),
+    /// Databases: `olsc db guard list|rewind` (copies saved before migrations).
+    #[command(subcommand)]
+    Db(DbCmd),
     // @@cli-cmds
     /// Run the core in the background without the window (started automatically when needed).
     Daemon {
@@ -391,6 +394,21 @@ pub struct AiRun {
     pub preview: bool,
 }
 // @@cli-enums
+
+#[derive(Subcommand)]
+pub enum DbCmd {
+    /// Migration guard: the database copies OLS saved before migrations.
+    #[command(subcommand)]
+    Guard(GuardCmd),
+}
+
+#[derive(Subcommand)]
+pub enum GuardCmd {
+    /// List saved copies, newest first (all projects, or one).
+    List { project: Option<String> },
+    /// Put a saved copy back (the current state is saved first).
+    Rewind { id: String },
+}
 
 #[derive(Subcommand)]
 pub enum DockerCmd {

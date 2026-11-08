@@ -50,6 +50,22 @@ impl Inner {
         history_line: &str,
     ) -> Result<ProcessId, CoreError> {
         let (executable, full_args, env) = self.project_program(program, args, project_id)?;
+        // §168: save the project's database before a command that changes its structure. If
+        // the copy cannot be made the command does not start.
+        if let Some(pid) = project_id {
+            if self.setting_bool(crate::migration_guard::SETTING_ENABLED, true) {
+                let root = self.projects.lock().unwrap().get(pid).map(|p| p.path);
+                if let Some(root) = root {
+                    if let Some(kind) = crate::migration_guard::migration_kind(
+                        program,
+                        args,
+                        std::path::Path::new(&root),
+                    ) {
+                        crate::migration_guard::take_guard_copy(self, pid, kind, history_line)?;
+                    }
+                }
+            }
+        }
         let cwd_owned = match cwd {
             Some(c) => Some(c.to_string()),
             None => match project_id {

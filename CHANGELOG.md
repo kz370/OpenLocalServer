@@ -9,6 +9,9 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.0.md).
 
+### Added
+- **Migration guard:** before OLS runs a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI), it saves the project's database. **Rewind** in the toast or in the project's Backups tab puts it back. Turn it off, or set the size limit, in Settings → Databases. Commands typed into the built-in terminal are not covered.
+
 ## [2.11.0] — 2026-11-08
 
 Feature release. Full notes: [`release-notes/v2.11.0.md`](./release-notes/v2.11.0.md).

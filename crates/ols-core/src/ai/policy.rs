@@ -247,6 +247,7 @@ pub fn destructive(cmd: &CoreCommand) -> bool {
                 | CoreCommand::RemoveRuntime { .. }
                 | CoreCommand::StopAll
                 | CoreCommand::RestoreDatabase { .. }
+                | CoreCommand::RewindGuardSnapshot { .. }
                 | CoreCommand::RestoreSnapshot { .. }
                 | CoreCommand::ImportSites { .. }
                 | CoreCommand::SetEnvValue { .. }
