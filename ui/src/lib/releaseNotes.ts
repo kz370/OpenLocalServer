@@ -297,6 +297,8 @@ export function parseReleaseNotes(markdown: string): ParsedReleaseNotes {
     if (token.type === 'list') {
       for (const item of token.items) {
         const text = item.text.trim()
+        // An empty bullet (`- `) is a placeholder: show nothing for it.
+        if (!text) continue
         featureCounter++
         // `**Title**: text` or `**Title:** text` (the notes use both). The title never
         // contains `*`/`_`, so it cannot run on into a later bold phrase.
@@ -340,10 +342,18 @@ export function parseReleaseNotes(markdown: string): ParsedReleaseNotes {
     }
   }
 
+  // Sections left with nothing in them (only placeholder bullets) are not shown.
+  const shown = sections.filter(
+    (sec) =>
+      sec.features.length > 0 ||
+      sec.content.length > 0 ||
+      sec.subsections.some((sub) => sub.features.length > 0 || sub.content.length > 0),
+  )
+
   return {
     metadata,
-    sections,
-    hasSpecialStructure: sections.length > 0,
+    sections: shown,
+    hasSpecialStructure: shown.length > 0,
     rawMarkdown: markdown,
   }
 }
