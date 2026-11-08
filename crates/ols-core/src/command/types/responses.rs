@@ -222,6 +222,9 @@ pub enum CoreResponse {
     DbBackups {
         backups: Vec<crate::dbbackup::DbBackup>,
     },
+    ReclaimReport {
+        report: Option<crate::reclaim::ReclaimReport>,
+    },
     GuardSnapshots {
         snapshots: Vec<crate::migration_guard::GuardSnapshot>,
     },

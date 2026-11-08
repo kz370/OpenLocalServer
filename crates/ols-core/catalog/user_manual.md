@@ -240,6 +240,9 @@ Protect your work with built-in backup and export tools:
   - **Password Protection:** Sealed using **Argon2id** key derivation and **ChaCha20-Poly1305** authenticated encryption.
   - **Import & Clone:** Import bundles onto any computer with automatic conflict resolution and safety snapshots.
 
+### Free up space
+**Projects → Free up space** looks through your projects for folders that can be rebuilt: `node_modules`, `vendor`, build caches (`.next`, `.nuxt`, `.turbo` …), Rust `target` and virtual environments. Choose how long a project must be unused (30 to 180 days), press **Scan**, tick the folders you want to clear and press **Delete selected**. Folders are removed permanently (not moved to the Recycle Bin); the rebuild command (`npm install`, `composer install` …) is shown next to each one. Virtual environments are never ticked for you, because the site stops working until they are recreated. Projects with running processes cannot be cleared, and OLS never follows shortcuts or junctions out of a project. From the command line: `olsc project reclaim --days 90`, and add `--delete --yes` to delete.
+
 ---
 
 ## 12. Monitoring, Logs & Background Tasks
@@ -368,6 +371,7 @@ olsc guide
 
 ### What's New in v2.12.0 (in development)
 - **Migration guard:** before OLS runs a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI), it saves the project's database. **Rewind** in the toast or in the project's Backups tab puts it back. Turn it off, or set the size limit, in Settings → Databases. Commands typed into the built-in terminal are not covered.
+- **Free up space:** Projects → Free up space finds `node_modules`, `vendor` and build caches in projects you have not used for a while and deletes the ones you pick (they can be rebuilt any time). `olsc project reclaim` does the same from the command line.
 
 ### What's New in v2.11.0
 - **Dockerize a project:** **Docker → Compose → From a project…**, or right-click a project or site → **Dockerize…**. OLS looks at the project (PHP, Node, Python, Go, Rust, Ruby, Java, .NET or a static site), shows what it found, then shows the Dockerfile, compose file and .dockerignore before it writes anything. The project is copied into the image, so it is fast on Windows. Choose **Development** (edits are synced into the container with **Create and watch**) or **Production** (a small multi-stage image that runs as a non-root user). Tick the services your project needs (MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch, Mailpit, Adminer): OLS adds them as version-pinned images, generates their passwords and keeps them in the Windows credential store, and passes your app the connection settings. For PHP it adds the extensions the project asks for. Existing files are never overwritten. OLS generated these files from what it could detect in your project. They are a starting point, not a guaranteed working setup. Review them, then build and test before you rely on them. Hide the right-click entry in Settings → Sidebar; it is also hidden when the Docker page is hidden from the sidebar.

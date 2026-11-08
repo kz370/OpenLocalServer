@@ -11,6 +11,7 @@ Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.
 
 ### Added
 - **Migration guard:** before OLS runs a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI), it saves the project's database. **Rewind** in the toast or in the project's Backups tab puts it back. Turn it off, or set the size limit, in Settings → Databases. Commands typed into the built-in terminal are not covered.
+- **Free up space:** Projects → Free up space finds `node_modules`, `vendor` and build caches in projects you have not used for a while and deletes the ones you pick (they can be rebuilt any time). `olsc project reclaim` does the same from the command line.
 
 ## [2.11.0] — 2026-11-08
 

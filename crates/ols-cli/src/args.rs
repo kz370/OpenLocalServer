@@ -159,6 +159,18 @@ pub enum ProjectCmd {
         url: String,
         path: PathBuf,
     },
+    /// Find node_modules, vendor and build caches in projects unused for a while.
+    Reclaim {
+        /// Only projects unused for at least this many days.
+        #[arg(long, default_value_t = 90)]
+        days: u64,
+        /// Delete the pre-selected folders (not virtual environments). Needs --yes.
+        #[arg(long)]
+        delete: bool,
+        /// Really delete (without it, --delete only shows what it would do).
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]

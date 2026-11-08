@@ -1,6 +1,6 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
-import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec } from './types/base'
+import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec, ReclaimItem } from './types/base'
 import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerizeOptions, DockerSiteRequest, EnvEdit, PruneTargets, RunSpec, ServicePreset } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
@@ -182,6 +182,9 @@ export type CoreCommand =
   | { type: 'list_db_backups'; engine: string; database: string | null }
   | { type: 'restore_database'; engine: string; database: string; file: string }
   | { type: 'delete_db_backup'; engine: string; file: string }
+  | { type: 'scan_reclaim' }
+  | { type: 'get_reclaim_report' }
+  | { type: 'reclaim_folders'; items: ReclaimItem[] }
   | { type: 'list_guard_snapshots'; project_id?: string | null }
   | { type: 'rewind_guard_snapshot'; id: string }
   | { type: 'delete_guard_snapshot'; id: string }

@@ -56,6 +56,7 @@ pub mod profiles;
 pub mod project;
 pub mod project_tools;
 pub mod quickapp;
+pub mod reclaim;
 pub mod redact;
 pub mod repair;
 pub mod resolver;

@@ -125,6 +125,8 @@ pub struct Inner {
     /// Last automatic-fix failures, shown in the corresponding diagnostic's details.
     pub auto_fix_failures: Mutex<HashMap<String, String>>,
     pub pending_add_project: Mutex<Option<String>>,
+    /// §170: the last Free up space scan.
+    pub reclaim: Mutex<Option<crate::reclaim::ReclaimReport>>,
     pub(crate) pending_site_undo: Mutex<HashMap<String, PendingSiteUndo>>,
     pub(crate) project_events: broadcast::Sender<()>,
 }
@@ -318,6 +320,7 @@ impl Inner {
             auto_fix_attempted: Mutex::new(HashSet::new()),
             auto_fix_failures: Mutex::new(HashMap::new()),
             pending_add_project: Mutex::new(None),
+            reclaim: Mutex::new(None),
             pending_site_undo: Mutex::new(HashMap::new()),
             project_events,
             paths,

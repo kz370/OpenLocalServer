@@ -302,3 +302,6 @@ Inner::project_database (crates/ols-core/src/snapshots.rs) | The database a proj
 olsc db (crates/ols-cli/src/commands/db.rs) | `db guard list [project]`, `db guard rewind <id>`.
 announceGuardCopy (ui/src/lib/migrationGuard.ts) | Toast with Rewind after a project command saved a database copy.
 GuardSection / MigrationGuardSettings (ui/src/components/project/BackupsPanel.tsx) | "Before migrations" list with Rewind and Delete; Settings → Databases switch and size limit.
+reclaim (crates/ols-core/src/reclaim.rs) | §170 Free up space: closed-list rebuildable folders in registered projects; `ReclaimReport`, `ReclaimProject`, `ReclaimCandidate`, `ReclaimItem`, `Inner::scan_reclaim`, `Inner::reclaim_folders`, `delete_candidate`.
+ReclaimDialog (ui/src/components/project/ReclaimDialog.tsx) | Free up space dialog opened from the Projects toolbar.
+olsc project reclaim (crates/ols-cli/src/commands/db.rs `reclaim`) | `--days N`, `--delete`, `--yes`.

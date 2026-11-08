@@ -4,6 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import {
   Code2,
   Copy,
+  Eraser,
   EyeOff,
   FolderOpen,
   FolderPlus,
@@ -28,6 +29,7 @@ import { type Page } from '@/components/layout/Sidebar'
 import { AddProjectDialog, type AddProjectItem } from '@/components/project/AddProjectDialog'
 import { ManageProjectTypesDialog } from '@/components/project/ManageProjectTypesDialog'
 import { GitCloneButton } from '@/components/project/ProjectImports'
+import { ReclaimDialog } from '@/components/project/ReclaimDialog'
 import { ProjectSettingsDialog } from '@/components/project/ProjectSettingsDialog'
 import { ProjectTypeFilterBar } from '@/components/project/ProjectTypeFilterBar'
 import { SiteLogo } from '@/components/SiteLogo'
@@ -140,6 +142,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
 
   const [activeMenu, setActiveMenu] = useState<{ id: string; anchor: MenuAnchor } | null>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const [reclaimOpen, setReclaimOpen] = useState(false)
 
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
@@ -779,6 +782,9 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
           <FolderPlus className="size-4" /> Add project folder
         </Button>
         <GitCloneButton defaultParent={effectiveParent} onDone={() => void refreshAll()} standalone={true} />
+        <Button variant="secondary" onClick={() => setReclaimOpen(true)} className="cursor-pointer gap-2" title="Free up space">
+          <Eraser className="size-4" /> <span className="hidden sm:inline">Free up space</span>
+        </Button>
         <div className="ml-auto">
           <RootFolderControls view={view} onChange={setView} />
         </div>
@@ -1268,6 +1274,7 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
         onUpdated={refreshAll}
       />
 
+      {reclaimOpen && <ReclaimDialog onClose={() => setReclaimOpen(false)} />}
       {/* Project Settings Dialog */}
       <ProjectSettingsDialog
         project={editingProject}

@@ -14,6 +14,42 @@ impl Core {
         let mut unhandled = None;
         let outcome: Result<CoreResponse, CoreError> = (|| {
             let res = match command {
+                C::ScanReclaim => {
+                    let inner = i.clone();
+                    let id = i.tasks.start(
+                        "reclaim-scan",
+                        "Look for folders to clear",
+                        "all",
+                        0,
+                        move |h| {
+                            let report = inner.scan_reclaim(&h);
+                            *inner.reclaim.lock().unwrap() = Some(report);
+                            crate::command::report(&h, Ok::<(), CoreError>(()));
+                        },
+                    );
+                    Ok(R::TaskStarted { id })
+                }
+                C::GetReclaimReport => Ok(R::ReclaimReport {
+                    report: i.reclaim.lock().unwrap().clone(),
+                }),
+                C::ReclaimFolders { items } => {
+                    for item in &items {
+                        crate::reclaim::validate_relative(&item.relative)?;
+                    }
+                    tracing::info!(command = "reclaim_folders", count = items.len());
+                    let inner = i.clone();
+                    let total = items.len();
+                    let id = i
+                        .tasks
+                        .start("reclaim", "Free up space", "all", total, move |h| {
+                            let freed = inner.reclaim_folders(&items, &h);
+                            h.result(format!("Freed {freed} bytes"));
+                            // The old report no longer matches the disk.
+                            *inner.reclaim.lock().unwrap() = None;
+                            crate::command::report(&h, Ok::<(), CoreError>(()));
+                        });
+                    Ok(R::TaskStarted { id })
+                }
                 C::GitInit { project_id } => Ok(R::GitStatus {
                     status: Box::new(i.git_init(&project_id)?),
                 }),

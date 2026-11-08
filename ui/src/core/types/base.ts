@@ -238,6 +238,36 @@ export interface GuardSnapshot {
   kind: string
 }
 
+/** Free up space (§170). */
+export interface ReclaimCandidate {
+  relative: string
+  kind: 'node_modules' | 'vendor' | 'build-cache' | 'rust-target' | 'venv'
+  bytes: number
+  size_is_minimum: boolean
+  rebuild: string
+  default_selected: boolean
+}
+
+export interface ReclaimProject {
+  project_id: string
+  name: string
+  path: string
+  idle_days: number
+  busy: boolean
+  items: ReclaimCandidate[]
+}
+
+export interface ReclaimReport {
+  scanned_ms: number
+  projects: ReclaimProject[]
+  total_bytes: number
+}
+
+export interface ReclaimItem {
+  project_id: string
+  relative: string
+}
+
 export type PortStatusLite = 'free' | 'in_use'
 
 export type ServiceLifecycleState = 'starting' | 'stopping' | 'restarting' | 'running' | 'stopped' | 'error'

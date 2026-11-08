@@ -401,3 +401,5 @@ Inner::spawn_project_process | calls | migration_guard::migration_kind, migratio
 migration_guard::take_guard_copy | calls | Inner::project_database, dbbackup::dump_to, ServiceManager::run_sql_query
 dispatch::RewindGuardSnapshot | starts | task guard-rewind -> migration_guard::rewind -> dbbackup::restore
 ols-mcp ols_list_migration_snapshots | maps_to | ListGuardSnapshots
+dispatch::ScanReclaim | starts | task reclaim-scan -> Inner::scan_reclaim -> Inner.reclaim
+dispatch::ReclaimFolders | starts | task reclaim -> Inner::reclaim_folders -> reclaim::delete_candidate (re-validates) ; checks supervisor.any_alive_in_dir

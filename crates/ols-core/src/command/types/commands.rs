@@ -601,6 +601,13 @@ pub enum CoreCommand {
         file: String,
     },
     /// §168: database copies saved before migrations, newest first.
+    /// §170: scans registered projects for folders that can be rebuilt (background task).
+    ScanReclaim,
+    GetReclaimReport,
+    /// §170: permanently deletes chosen rebuildable folders (background task).
+    ReclaimFolders {
+        items: Vec<crate::reclaim::ReclaimItem>,
+    },
     ListGuardSnapshots {
         #[serde(default)]
         project_id: Option<String>,
