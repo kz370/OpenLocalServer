@@ -3567,7 +3567,7 @@ dependencies = [
 
 [[package]]
 name = "ols-helper"
-version = "2.11.0"
+version = "2.8.0"
 dependencies = [
  "ols-core",
  "serde_json",

@@ -1716,7 +1716,7 @@ async fn handle_request(req: JsonRpcRequest, override_token: Option<&str>) -> Js
                 },
                 "serverInfo": {
                     "name": "ols-mcp",
-                    "version": "2.3.0"
+                    "version": env!("CARGO_PKG_VERSION")
                 }
             });
             JsonRpcResponse::ok(req.id, result)
