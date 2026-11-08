@@ -60,6 +60,18 @@ pub enum CoreResponse {
     ProcessStarted {
         id: ProcessId,
     },
+    RemoteDbs {
+        remotes: Vec<crate::remote_db::RemoteDb>,
+    },
+    AnonymizeRules {
+        yaml: Option<String>,
+    },
+    BranchDb {
+        info: crate::branch_db::BranchDbInfo,
+    },
+    DumpStatus {
+        status: crate::dumps::DumpStatus,
+    },
     Processes {
         processes: Vec<ProcessInfo>,
     },

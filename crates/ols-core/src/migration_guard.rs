@@ -298,7 +298,7 @@ fn sqlite_relative(root: &Path) -> String {
         .unwrap_or_else(|| "database/database.sqlite".into())
 }
 
-fn sqlite_full(root: &Path, configured: &str) -> PathBuf {
+pub(crate) fn sqlite_full(root: &Path, configured: &str) -> PathBuf {
     let p = Path::new(configured);
     if p.is_absolute() {
         p.to_path_buf()
@@ -314,7 +314,7 @@ fn side_file(path: &Path, suffix: &str) -> PathBuf {
 }
 
 /// Copies a SQLite file (and its `-wal` / `-shm` when present) to `dest`.
-fn copy_sqlite(src: &Path, dest: &Path) -> std::io::Result<()> {
+pub(crate) fn copy_sqlite(src: &Path, dest: &Path) -> std::io::Result<()> {
     std::fs::copy(src, dest)?;
     for suffix in ["-wal", "-shm"] {
         let side = side_file(src, suffix);

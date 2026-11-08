@@ -30,3 +30,7 @@ folders (Windows, Program Files, ProgramData), user profile roots and their `App
 manages (project root folders, the sites folder, its data folder), only after a click in the app, and only removes
 exclusions it added. An excluded folder is not scanned in real time, so malware that lands there is not caught: only
 exclude folders with code you trust. Reports of the helper accepting a path it should refuse are in scope.
+
+## Pulling a server database (2.12.0)
+
+Project -> Backups -> Pull from a server copies a staging or production database over SSH. OLS supports SSH key login only, keeps the database password in the Windows credential store (never in settings, logs, task output or a command line; it is written to the remote shell's stdin), validates every profile field before starting `ssh`, and imports the dump into a temporary database first, so your local database is only replaced after the data (and the optional anonymizing rules) were applied. The downloaded dump is deleted as soon as it is imported. A server database usually holds real people's data: use anonymizing whenever you can; without it you are copying personal data onto your computer and you are responsible for protecting it. Server profiles and pulls are deliberately not available through the HTTP API or MCP.

@@ -1,7 +1,8 @@
 import { save, open } from '@tauri-apps/plugin-dialog'
-import { Camera, Copy, Download, History, Timer, Trash2 } from 'lucide-react'
+import { Camera, CloudDownload, Copy, Download, History, Pencil, Plug, Plus, Timer, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { CodeEditor } from '@/components/CodeEditor'
 import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
 import { ErrorCard } from '@/components/ErrorCard'
 import { SaveButton } from '@/components/SaveButton'
@@ -12,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, SwitchRow, Toggle } from '@/components/ui/form'
 import { Input, NumberInput } from '@/components/ui/input'
-import { type AutoBackupSiteSettings, type AutoBackupStatus, type CloneResult, type Diagnostic, type GuardSnapshot, type Project, type RestoreOptions, type RestoreResult, type SnapshotInfo, type SnapshotOptions, runCommand } from '@/core'
+import { type AutoBackupSiteSettings, type AutoBackupStatus, type CloneResult, type Diagnostic, type GuardSnapshot, type Project, type RemoteDb, type RestoreOptions, type RestoreResult, type SnapshotInfo, type SnapshotOptions, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { asDiagnostic } from '@/lib/diagnostic'
 import { formatBytes, timeAgo, useAction } from '@/lib/hooks'
@@ -43,6 +44,8 @@ export function BackupsPanel({ project }: { project: Project }) {
       <AutoBackupSection project={project} onChanged={load} />
 
       <GuardSection project={project} />
+
+      <ServerPullSection project={project} />
 
       <section className="flex flex-col gap-3 rounded-lg border border-border p-3">
         <h3 className="flex items-center gap-2 text-sm font-medium">
@@ -691,3 +694,289 @@ export function MigrationGuardSettings() {
     </div>
   )
 }
+
+const EMPTY_REMOTE: RemoteDb = { id: '', name: '', ssh_target: '', ssh_port: null, engine: 'mariadb', database: '', db_user: '', db_host: '127.0.0.1', db_port: null, has_password: false }
+
+const SSH_TARGET = /^[A-Za-z0-9._-]+(@[A-Za-z0-9._-]+)?$/
+const USER = /^[A-Za-z0-9_.-]{1,64}$/
+const HOST = /^[A-Za-z0-9.-]{1,253}$/
+const DB_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/
+
+/** The same checks the core runs, so the form can say what is wrong before saving. */
+function remoteProblem(r: RemoteDb): string | null {
+  if (!r.name.trim() || r.name.length > 40) return 'Give the profile a name (up to 40 characters).'
+  if (!SSH_TARGET.test(r.ssh_target) || r.ssh_target.length > 255 || r.ssh_target.startsWith('-')) return 'SSH address: use user@host or a name from your SSH config.'
+  if (!DB_NAME.test(r.database)) return 'Database name: letters, digits and _ - . only.'
+  if (!USER.test(r.db_user)) return 'Database user: letters, digits and _ . - only.'
+  if (!HOST.test(r.db_host)) return 'Database host: letters, digits, . and - only.'
+  for (const p of [r.ssh_port, r.db_port]) if (p !== null && (p < 1 || p > 65535)) return 'Ports are 1 to 65535.'
+  return null
+}
+
+/**
+ * §177 Pull from a server: saved SSH profiles, a Pull dialog, and the anonymizing rules.
+ * The password is sent once to the core and kept in the OS keyring; it is never shown again.
+ */
+function ServerPullSection({ project }: { project: Project }) {
+  const [remotes, setRemotes] = useState<RemoteDb[]>([])
+  const [form, setForm] = useState<{ remote: RemoteDb; password: string } | null>(null)
+  const [pulling, setPulling] = useState<RemoteDb | null>(null)
+  const [taskId, setTaskId] = useState<string | null>(null)
+  const action = useAction()
+  const { busy, error, setError, run } = action
+
+  const load = useCallback(async () => {
+    const r = await runCommand({ type: 'list_remote_dbs', project_id: project.id })
+    if (r.type === 'remote_dbs') setRemotes(r.remotes)
+  }, [project.id])
+  useEffect(() => {
+    load().catch(setError)
+  }, [load, setError])
+
+  const problem = form ? remoteProblem(form.remote) : null
+
+  return (
+    <section className="flex flex-col gap-2">
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+      <div className="flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-medium">
+          <CloudDownload className="size-4" /> Pull from a server · {remotes.length}
+        </h3>
+        <Button size="sm" variant="secondary" onClick={() => setForm({ remote: EMPTY_REMOTE, password: '' })}>
+          <Plus /> Add
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Copies a staging or production database to this computer over SSH. SSH key login only (OLS cannot answer password prompts); the server needs mysqldump or pg_dump. A server database usually holds real people's data: pull with anonymizing whenever you can.
+      </p>
+      {remotes.length === 0 && <p className="text-sm text-muted-foreground">No server profiles yet.</p>}
+      {remotes.map((r) => (
+        <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+          <div className="min-w-0">
+            <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+              {r.name}
+              <Badge variant="secondary">{r.engine}</Badge>
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {r.ssh_target} · {r.database}
+            </p>
+          </div>
+          <div className="flex gap-1">
+            <Button size="sm" onClick={() => setPulling(r)}>
+              <CloudDownload /> Pull
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy !== null}
+              onClick={() =>
+                void run(`test:${r.id}`, async () => {
+                  const t = await runCommand({ type: 'test_remote_db', project_id: project.id, id: r.id })
+                  if (t.type === 'task_started') setTaskId(t.id)
+                })
+              }
+            >
+              <Plug /> Test
+            </Button>
+            <Button size="icon" variant="ghost" className="size-8" title="Edit" onClick={() => setForm({ remote: r, password: '' })}>
+              <Pencil />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8"
+              title="Delete"
+              onClick={async () => {
+                if (await confirmAction(`Delete the server profile ${r.name}? Its saved password is removed too.`))
+                  await run(`rdel:${r.id}`, async () => {
+                    await runCommand({ type: 'delete_remote_db', project_id: project.id, id: r.id })
+                    await load()
+                  })
+              }}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        </div>
+      ))}
+
+      <Dialog
+        open={form !== null}
+        onClose={() => setForm(null)}
+        title={form?.remote.id ? 'Edit server profile' : 'Add server profile'}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setForm(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!form || problem !== null || busy !== null}
+              onClick={() =>
+                void run('save', async () => {
+                  if (!form) return
+                  const pw = form.password === '' ? null : form.password
+                  await runCommand({ type: 'save_remote_db', project_id: project.id, remote: form.remote, password: pw })
+                  setForm(null)
+                  await load()
+                })
+              }
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        {form && (
+          <div className="flex flex-col gap-3">
+            <Field label="Name" hint="Only shown here, for example staging.">
+              <Input value={form.remote.name} onChange={(e) => setForm({ ...form, remote: { ...form.remote, name: e.target.value } })} />
+            </Field>
+            <Field label="SSH address" hint="user@host, or a name from your SSH config. Key login only.">
+              <Input value={form.remote.ssh_target} onChange={(e) => setForm({ ...form, remote: { ...form.remote, ssh_target: e.target.value.trim() } })} className="font-mono" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Database type">
+                <Select value={form.remote.engine} onChange={(e) => setForm({ ...form, remote: { ...form.remote, engine: e.target.value } })}>
+                  <option value="mariadb">MariaDB / MySQL</option>
+                  <option value="postgres">PostgreSQL</option>
+                </Select>
+              </Field>
+              <Field label="Database name">
+                <Input value={form.remote.database} onChange={(e) => setForm({ ...form, remote: { ...form.remote, database: e.target.value.trim() } })} className="font-mono" />
+              </Field>
+              <Field label="Database user">
+                <Input value={form.remote.db_user} onChange={(e) => setForm({ ...form, remote: { ...form.remote, db_user: e.target.value.trim() } })} className="font-mono" />
+              </Field>
+              <Field label="Database password" hint={form.remote.has_password ? 'Saved. Leave empty to keep it.' : 'Saved in the Windows credential store.'}>
+                <Input type="password" autoComplete="off" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+              </Field>
+              <Field label="Database host" hint="As seen from the server.">
+                <Input value={form.remote.db_host} onChange={(e) => setForm({ ...form, remote: { ...form.remote, db_host: e.target.value.trim() } })} className="font-mono" />
+              </Field>
+              <Field label="Ports (optional)" hint="SSH port, then database port.">
+                <div className="flex gap-2">
+                  <NumberInput label="SSH port" value={form.remote.ssh_port} min={1} max={65535} onChange={(v) => setForm({ ...form, remote: { ...form.remote, ssh_port: v } })} className="h-8 w-24" />
+                  <NumberInput label="Database port" value={form.remote.db_port} min={1} max={65535} onChange={(v) => setForm({ ...form, remote: { ...form.remote, db_port: v } })} className="h-8 w-24" />
+                </div>
+              </Field>
+            </div>
+            {form.remote.has_password && form.password === '' && <p className="text-xs text-muted-foreground">To remove the saved password, delete the profile and add it again.</p>}
+            {problem && <p className="text-xs text-warning">{problem}</p>}
+          </div>
+        )}
+      </Dialog>
+
+      {pulling && <PullDialog project={project} remote={pulling} onClose={() => setPulling(null)} onStarted={setTaskId} />}
+      <TaskOutputDialog taskId={taskId} onClose={() => setTaskId(null)} onFinished={() => void load()} />
+    </section>
+  )
+}
+
+function PullDialog({ project, remote, onClose, onStarted }: { project: Project; remote: RemoteDb; onClose: () => void; onStarted: (id: string) => void }) {
+  const [mode, setMode] = useState<'replace' | 'new'>('replace')
+  const [anonymize, setAnonymize] = useState(true)
+  const [understood, setUnderstood] = useState(false)
+  const [rules, setRules] = useState<string | null>(null)
+  const [draft, setDraft] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction()
+
+  useEffect(() => {
+    void runCommand({ type: 'get_anonymize_rules', project_id: project.id })
+      .then((r) => {
+        if (r.type === 'anonymize_rules') setRules(r.yaml)
+      })
+      .catch(setError)
+  }, [project.id, setError])
+
+  const haveRules = rules !== null
+  const useAnonymize = anonymize && haveRules
+  const canPull = useAnonymize || understood
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Pull ${remote.name}`}
+      description="Copies the server database to this computer."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!canPull || busy !== null}
+            onClick={() =>
+              void run('pull', async () => {
+                const r = await runCommand({ type: 'pull_remote_db', project_id: project.id, remote_id: remote.id, mode, anonymize: useAnonymize, confirm_real_data: !useAnonymize && understood })
+                if (r.type === 'task_started') {
+                  onStarted(r.id)
+                  onClose()
+                }
+              })
+            }
+          >
+            {busy ? <Spinner /> : <CloudDownload />} Pull
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <ErrorCard error={error} onDismiss={() => setError(null)} />
+        <Field label="What to do with your local database">
+          <Select value={mode} onChange={(e) => setMode(e.target.value as 'replace' | 'new')}>
+            <option value="replace">Replace it (OLS saves a backup first)</option>
+            <option value="new">Keep it and create a new one</option>
+          </Select>
+        </Field>
+        <SwitchRow
+          checked={useAnonymize}
+          disabled={!haveRules}
+          onChange={setAnonymize}
+          title="Anonymize"
+          hint={haveRules ? 'Emails, names, phone numbers and passwords are replaced with fake values before you open the data.' : 'There are no rules yet. Create rules first, or pull the real data.'}
+        />
+        {!haveRules && draft === null && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              void run('suggest', async () => {
+                const r = await runCommand({ type: 'suggest_anonymize_rules', project_id: project.id })
+                if (r.type === 'anonymize_rules') setDraft(r.yaml ?? '')
+              })
+            }
+          >
+            Create rules
+          </Button>
+        )}
+        {draft !== null && (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-muted-foreground">OLS read your local database and suggests these rules. Check them, then save. They are stored in .openlocalserver/anonymize.yaml, which your team can commit.</p>
+            <CodeEditor value={draft} onChange={setDraft} language="yaml" height="260px" />
+            <Button
+              size="sm"
+              onClick={() =>
+                void run('save-rules', async () => {
+                  await runCommand({ type: 'save_anonymize_rules', project_id: project.id, yaml: draft })
+                  setRules(draft)
+                  setDraft(null)
+                })
+              }
+            >
+              Save rules
+            </Button>
+          </div>
+        )}
+        {!useAnonymize && (
+          <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+            <p className="mb-2">Without anonymizing, you copy real personal data onto your computer, and you are responsible for protecting it. OLS deletes the downloaded file as soon as it is imported.</p>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />I understand this copies real personal data
+            </label>
+          </div>
+        )}
+      </div>
+    </Dialog>
+  )
+}
+

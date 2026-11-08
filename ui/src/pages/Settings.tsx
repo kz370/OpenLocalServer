@@ -12,6 +12,7 @@ import { ReleaseNotesView } from '@/components/ReleaseNotesView'
 import { ApiCard, SystemCard, UpdatesCard } from '@/components/ReleaseCards'
 import { PerformanceSettings } from '@/components/settings/PerformanceSettings'
 import { MigrationGuardSettings } from '@/components/project/BackupsPanel'
+import { DumpViewerSettings } from '@/components/project/DumpsPanel'
 import { AboutCard, AutoBackupCard, ResourcesCard, SettingsBackupsCard } from '@/components/SettingsExtras'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
@@ -857,6 +858,15 @@ export function SettingsPage() {
                 </CardHeader>
                 <CardContent>
                   <MigrationGuardSettings />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">PHP dump viewer</CardTitle>
+                  <CardDescription>Shows dump() and dd() output inside OLS.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <DumpViewerSettings />
                 </CardContent>
               </Card>
               <ApiCard />

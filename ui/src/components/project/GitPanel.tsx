@@ -7,9 +7,10 @@ import { SaveButton } from '@/components/SaveButton'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Select, Tabs, Textarea, Toggle } from '@/components/ui/form'
+import { Field, Select, SwitchRow, Tabs, Textarea, Toggle } from '@/components/ui/form'
+import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
 import { Input } from '@/components/ui/input'
-import { type GitBranch as Branch, type GitCommit, type GitFile, type GitStatus, runCommand } from '@/core'
+import { type BranchDbInfo, type GitBranch as Branch, type GitCommit, type GitFile, type GitStatus, runCommand } from '@/core'
 import { confirmAction } from '@/lib/confirm'
 import { timeAgo, useAction } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
@@ -191,7 +192,101 @@ export function GitPanel({ projectId }: { projectId: string }) {
       {tab === 'branches' && <Branches projectId={projectId} reload={load} />}
       {tab === 'remotes' && <Remotes projectId={projectId} status={status} reload={load} />}
       {tab === 'stash' && <Stash projectId={projectId} status={status} reload={load} />}
+      <BranchDbCard projectId={projectId} />
     </div>
+  )
+}
+
+/** §176 Database per branch: each Git branch gets its own copy of the project's database. */
+function BranchDbCard({ projectId }: { projectId: string }) {
+  const [info, setInfo] = useState<BranchDbInfo | null>(null)
+  const [from, setFrom] = useState('base')
+  const [taskId, setTaskId] = useState<string | null>(null)
+  const { busy, error, setError, run } = useAction()
+
+  const load = useCallback(async () => {
+    const r = await runCommand({ type: 'get_branch_db', project_id: projectId })
+    if (r.type === 'branch_db') setInfo(r.info)
+  }, [projectId])
+  useEffect(() => {
+    load().catch(setError)
+  }, [load, setError])
+
+  const on = info?.config?.enabled ?? false
+  const rows = Object.entries(info?.config?.map ?? {})
+
+  return (
+    <section className="flex flex-col gap-2 rounded-lg border border-border p-3">
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+      <h3 className="text-sm font-medium">Database per branch</h3>
+      <p className="text-xs text-muted-foreground">
+        When you switch branches, OLS points <code>.env</code> at a copy of the database made for that branch. Your main database is never changed by work on other branches.
+      </p>
+      <SwitchRow
+        checked={on}
+        disabled={busy !== null || !info}
+        title="Give each branch its own database"
+        hint="Needs a .env that Git does not track, and a running database server (SQLite needs neither)."
+        onChange={(v) =>
+          void run('toggle', async () => {
+            const r = await runCommand({ type: 'set_branch_db', project_id: projectId, enabled: v, clone_from: from })
+            if (r.type === 'branch_db') setInfo(r.info)
+          })
+        }
+      />
+      {!on && (
+        <Field label="New branches are copied from">
+          <Select value={from} onChange={(e) => setFrom(e.target.value)}>
+            <option value="base">The main branch's database</option>
+            <option value="current">The database in use now</option>
+          </Select>
+        </Field>
+      )}
+      {info?.pending && <p className="text-xs text-warning">Start the database server so OLS can switch the database for branch {info.pending}.</p>}
+      {on && info?.config_cache && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          Laravel's config cache may still point to the old database.
+          <Button size="sm" variant="secondary" onClick={() => void run('clear', () => runCommand({ type: 'run_command_line', line: 'php artisan config:clear', cwd: null, project_id: projectId }))}>
+            Run config:clear
+          </Button>
+        </div>
+      )}
+      {on && (
+        <div className="flex flex-col gap-1 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs">{info?.config?.base_branch}</span> → <span className="font-mono text-xs">{info?.config?.base_database}</span>
+            {info?.current_database === info?.config?.base_database && <Badge variant="success">current</Badge>}
+          </div>
+          {rows.map(([branch, db]) => {
+            const orphan = info?.orphaned.includes(branch)
+            return (
+              <div key={branch} className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-xs">{branch}</span> → <span className="font-mono text-xs">{db}</span>
+                {info?.current_database === db && <Badge variant="success">current</Badge>}
+                {orphan && <Badge variant="outline">branch is gone</Badge>}
+                {orphan && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={async () => {
+                      if (!(await confirmAction(`Delete database ${db}? OLS saves a backup first.`))) return
+                      await run(`del:${db}`, async () => {
+                        const r = await runCommand({ type: 'delete_branch_db', project_id: projectId, database: db })
+                        if (r.type === 'task_started') setTaskId(r.id)
+                      })
+                    }}
+                  >
+                    <Trash2 className="size-3.5" /> Delete
+                  </Button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <TaskOutputDialog taskId={taskId} onClose={() => setTaskId(null)} onFinished={() => void load()} />
+    </section>
   )
 }
 

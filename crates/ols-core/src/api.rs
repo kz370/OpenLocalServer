@@ -34,6 +34,10 @@ const MAX_BODY: usize = 1024 * 1024;
 
 /// Commands the API never runs, whatever the mode.
 const NEVER: &[&str] = &[
+    // §177: server database profiles and anonymizing rules (data exfiltration risk).
+    "list_remote_dbs",
+    "get_anonymize_rules",
+    "suggest_anonymize_rules",
     "get_secret",
     "set_secret",
     "delete_secret",
@@ -521,6 +525,27 @@ mod tests {
             .and_then(|c| c.parse().ok())
             .unwrap_or(0);
         (status, out)
+    }
+
+    #[test]
+    fn server_database_commands_never_reach_the_api() {
+        for tag in [
+            "list_remote_dbs",
+            "get_anonymize_rules",
+            "suggest_anonymize_rules",
+        ] {
+            assert!(!allowed(tag, "read_only"), "{tag}");
+            assert!(!allowed(tag, "operate"), "{tag}");
+        }
+        for tag in [
+            "pull_remote_db",
+            "save_remote_db",
+            "delete_remote_db",
+            "test_remote_db",
+            "save_anonymize_rules",
+        ] {
+            assert!(!allowed(tag, "operate"), "{tag}");
+        }
     }
 
     #[test]

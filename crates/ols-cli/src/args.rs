@@ -414,6 +414,41 @@ pub enum DbCmd {
     /// Migration guard: the database copies OLS saved before migrations.
     #[command(subcommand)]
     Guard(GuardCmd),
+    /// Database per Git branch: each branch gets its own copy of the database.
+    #[command(subcommand)]
+    Branch(BranchCmd),
+    /// Pull a server database over SSH into the project's local database.
+    Pull {
+        project: String,
+        /// The saved server profile (see `olsc db remotes`).
+        remote: String,
+        /// Replace emails, names, phones and passwords with fake values (needs rules).
+        #[arg(long)]
+        anonymize: bool,
+        /// Keep your database and create a new one instead of replacing it.
+        #[arg(long)]
+        new: bool,
+        /// Confirm that you may copy real personal data (needed without --anonymize).
+        #[arg(long)]
+        yes_real_data: bool,
+    },
+    /// List a project's saved server profiles (never shows passwords).
+    Remotes { project: String },
+}
+
+#[derive(Subcommand)]
+pub enum BranchCmd {
+    /// Show the setting, the current branch and database, and the branch map.
+    Status { project: String },
+    /// Turn it on (the current branch becomes the main one).
+    On {
+        project: String,
+        /// Copy new branches from the current database instead of the main one.
+        #[arg(long)]
+        from_current: bool,
+    },
+    /// Turn it off and point `.env` back at the main database.
+    Off { project: String },
 }
 
 #[derive(Subcommand)]

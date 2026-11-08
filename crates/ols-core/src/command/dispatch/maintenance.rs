@@ -268,6 +268,10 @@ impl Core {
                     i.open_in_editor(&path)?;
                     Ok(R::Ok)
                 }
+                C::OpenInEditorAt { path, line } => {
+                    i.open_in_editor_at(&path, line)?;
+                    Ok(R::Ok)
+                }
                 C::OpenWith { path, app } => {
                     i.open_with(&path, &app)?;
                     Ok(R::Ok)

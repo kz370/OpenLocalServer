@@ -315,3 +315,15 @@ ols-helper defender-exclude-add / defender-exclude-remove (crates/ols-helper/src
 PerformanceSettings (ui/src/components/settings/PerformanceSettings.tsx) | Settings → Performance card.
 profiler (crates/ols-core/src/profiler.rs) | §174 Xdebug profile viewer: `ProfileFile`, `FnStat`, `CallNode`, `Profile`, `parse_cachegrind`, `toggle_profiling`, `Inner::list_profiles`, `get_profile`, `delete_profiles`, `set_site_profiling`.
 ProfilerPanel (ui/src/components/project/ProfilerPanel.tsx) | Profiler tool tab (`profiler` in projectToolTabs.ts, after `xdebug`).
+dumps (crates/ols-core/src/dumps.rs) | §175 Dump viewer: `DumpStatus`, `prepend_ini_line`, `ini_sets_prepend`, `render_map`, `Inner::init_dump_capture`, `set_dump_capture`, `dump_status`, `start_dump_server`, `stop_dump_server`, `dump_env`. Setting `php.dump_capture`.
+editors::open_args_at (crates/ols-core/src/editors.rs) | Editor arguments that open a file at a line; `Inner::open_in_editor_at` refuses files outside projects.
+DumpsPanel (ui/src/components/project/DumpsPanel.tsx) | Dumps tool tab (`dumps` in projectToolTabs.ts, after `terminal`) and `DumpViewerSettings` (Settings → General).
+branch_db (crates/ols-core/src/branch_db.rs) | §176 Database per branch: `BranchDbConfig`, `BranchDbInfo`, `branch_db_name`, `parse_head`, `get`, `set`, `handle_head_change`, `delete`, `Inner::ensure_branch_watcher`. Setting `projects.branch_db`.
+ServiceManager::clone_database (crates/ols-core/src/service.rs) | Copies a database to a new name (PostgreSQL template first, then dump and load).
+BranchDbCard (ui/src/components/project/GitPanel.tsx) | Database per branch card in the project's Git tab.
+olsc db branch (crates/ols-cli/src/commands/db.rs) | `status|on|off <project>`.
+remote_db (crates/ols-core/src/remote_db.rs) | §177 Pull a server database: `RemoteDb`, `validate`, `sh_quote`, `remote_command`, `ssh_args`, `save`, `delete`, `list`, `test`, `pull`, `DumpFile`, `cleanup_leftovers`, `get_rules`, `save_rules`, `suggest_rules`. Setting `projects.remote_dbs`; keyring `remote_db:<project>:<id>`.
+anonymize (crates/ols-core/src/anonymize.rs) | §177 Anonymizing rules: `Rules`, `Kind`, `parse_rules`, `build_sql`, `script`, `check_columns`, `suggest`.
+ServiceManager::run_sql_in (crates/ols-core/src/service.rs) | SQL inside one database with a caller-chosen timeout.
+ServerPullSection / PullDialog (ui/src/components/project/BackupsPanel.tsx) | Pull from a server section of the Backups tab.
+olsc db pull / remotes (crates/ols-cli/src/commands/db.rs) | Pull a server database; list profiles.

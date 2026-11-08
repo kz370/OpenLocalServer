@@ -125,6 +125,120 @@ impl Core {
                     });
                     Ok(R::TaskStarted { id: tid })
                 }
+                C::ListRemoteDbs { project_id } => Ok(R::RemoteDbs {
+                    remotes: crate::remote_db::list(i, &project_id),
+                }),
+                C::SaveRemoteDb {
+                    project_id,
+                    remote,
+                    password,
+                } => {
+                    // Never log the password.
+                    tracing::info!(command = "save_remote_db", project = %project_id, name = %remote.name);
+                    Ok(R::RemoteDbs {
+                        remotes: crate::remote_db::save(i, &project_id, remote, password)?,
+                    })
+                }
+                C::DeleteRemoteDb { project_id, id } => {
+                    tracing::info!(command = "delete_remote_db", project = %project_id, id = %id);
+                    Ok(R::RemoteDbs {
+                        remotes: crate::remote_db::delete(i, &project_id, &id)?,
+                    })
+                }
+                C::TestRemoteDb { project_id, id } => {
+                    let inner = i.clone();
+                    let target = format!("{project_id}:{id}");
+                    let tid = i.tasks.start(
+                        "remote-db-test",
+                        "Test the server connection",
+                        &target,
+                        1,
+                        move |h| {
+                            h.begin_step("Connecting over SSH");
+                            let r = crate::remote_db::test(&inner, &project_id, &id);
+                            if let Ok(text) = &r {
+                                h.result(text.clone());
+                            }
+                            crate::command::report(&h, r);
+                        },
+                    );
+                    Ok(R::TaskStarted { id: tid })
+                }
+                C::GetAnonymizeRules { project_id } => Ok(R::AnonymizeRules {
+                    yaml: crate::remote_db::get_rules(i, &project_id)?,
+                }),
+                C::SuggestAnonymizeRules { project_id } => Ok(R::AnonymizeRules {
+                    yaml: Some(crate::remote_db::suggest_rules(i, &project_id)?),
+                }),
+                C::SaveAnonymizeRules { project_id, yaml } => {
+                    crate::remote_db::save_rules(i, &project_id, &yaml)?;
+                    Ok(R::Ok)
+                }
+                C::PullRemoteDb {
+                    project_id,
+                    remote_id,
+                    mode,
+                    anonymize,
+                    confirm_real_data,
+                } => {
+                    tracing::info!(command = "pull_remote_db", project = %project_id, remote = %remote_id, anonymize);
+                    let inner = i.clone();
+                    let target = project_id.clone();
+                    let tid =
+                        i.tasks
+                            .start("db-pull", "Pull a server database", &target, 5, move |h| {
+                                let r = crate::remote_db::pull(
+                                    &inner,
+                                    &h,
+                                    &project_id,
+                                    &remote_id,
+                                    &mode,
+                                    anonymize,
+                                    confirm_real_data,
+                                );
+                                if let Ok(text) = &r {
+                                    h.result(text.clone());
+                                }
+                                crate::command::report(&h, r);
+                            });
+                    Ok(R::TaskStarted { id: tid })
+                }
+                C::GetBranchDb { project_id } => Ok(R::BranchDb {
+                    info: crate::branch_db::get(i, &project_id)?,
+                }),
+                C::SetBranchDb {
+                    project_id,
+                    enabled,
+                    clone_from,
+                } => {
+                    tracing::info!(command = "set_branch_db", project = %project_id, enabled);
+                    Ok(R::BranchDb {
+                        info: crate::branch_db::set(i, &project_id, enabled, clone_from)?,
+                    })
+                }
+                C::DeleteBranchDb {
+                    project_id,
+                    database,
+                } => {
+                    tracing::info!(command = "delete_branch_db", project = %project_id);
+                    let inner = i.clone();
+                    let target = project_id.clone();
+                    let tid = i.tasks.start(
+                        "branch-db-delete",
+                        &format!("Delete {database}"),
+                        &target,
+                        1,
+                        move |h| {
+                            h.begin_step("Saving a backup, then deleting");
+                            let r = crate::branch_db::delete(&inner, &project_id, &database);
+                            if let Ok(text) = &r {
+                                h.result(text.clone());
+                            }
+                            crate::command::report(&h, r);
+                        },
+                    );
+                    Ok(R::TaskStarted { id: tid })
+                }
                 C::DeleteGuardSnapshot { id } => {
                     crate::migration_guard::delete(&i.paths, &id)?;
                     Ok(R::Ok)

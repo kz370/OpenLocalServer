@@ -1,6 +1,6 @@
 import type { AiProvider, AiRequest } from './types/ai'
 import type { QuickCommand, StartupSettings } from './types/apps'
-import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec, ReclaimItem, SiteImportChoice } from './types/base'
+import type { CustomServiceDef, EnvironmentManifest, Ownership, ProcessId, ProcessSpec, ReclaimItem, RemoteDb, SiteImportChoice } from './types/base'
 import type { BuildSpec, ComposeAction, ContainerUpdate, DockerContainerAction, DockerizeOptions, DockerSiteRequest, EnvEdit, PruneTargets, RunSpec, ServicePreset } from './types/docker'
 import type { XdebugSettings } from './types/environment'
 import type { LoadProfile } from './types/system'
@@ -255,6 +255,22 @@ export type CoreCommand =
   | { type: 'open_path'; path: string }
   | { type: 'open_url'; url: string }
   | { type: 'open_in_editor'; path: string }
+  | { type: 'open_in_editor_at'; path: string; line: number }
+  | { type: 'list_remote_dbs'; project_id: string }
+  | { type: 'save_remote_db'; project_id: string; remote: RemoteDb; password?: string | null }
+  | { type: 'delete_remote_db'; project_id: string; id: string }
+  | { type: 'test_remote_db'; project_id: string; id: string }
+  | { type: 'get_anonymize_rules'; project_id: string }
+  | { type: 'suggest_anonymize_rules'; project_id: string }
+  | { type: 'save_anonymize_rules'; project_id: string; yaml: string }
+  | { type: 'pull_remote_db'; project_id: string; remote_id: string; mode: 'replace' | 'new'; anonymize: boolean; confirm_real_data: boolean }
+  | { type: 'get_branch_db'; project_id: string }
+  | { type: 'set_branch_db'; project_id: string; enabled: boolean; clone_from?: string | null }
+  | { type: 'delete_branch_db'; project_id: string; database: string }
+  | { type: 'set_dump_capture'; on: boolean }
+  | { type: 'get_dump_status'; project_id: string }
+  | { type: 'start_dump_server'; project_id: string }
+  | { type: 'stop_dump_server'; project_id: string }
   | { type: 'open_with'; path: string; app: string }
   | { type: 'open_terminal'; project_id: string | null; shell: string | null; rows: number; cols: number }
   | { type: 'terminal_input'; id: number; data: string }

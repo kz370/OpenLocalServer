@@ -277,12 +277,12 @@ const IDENTIFIER_HINT: &str =
     "database name must be letters, digits, '_', '-' or '.' only (max 64)";
 
 /// Single-quoted literal for PostgreSQL, where backslashes are ordinary characters.
-fn pg_string(value: &str) -> String {
+pub(crate) fn pg_string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
 /// Escapes a value for a single-quoted SQL string literal.
-fn sql_string(value: &str) -> String {
+pub(crate) fn sql_string(value: &str) -> String {
     format!("'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
 }
 
@@ -1757,6 +1757,70 @@ impl ServiceManager {
         }
     }
 
+    /// Runs SQL as root inside `database` and returns the tab-separated output (§177). Unlike
+    /// `run_sql_query` it has a caller-chosen timeout, for large anonymizing scripts.
+    pub fn run_sql_in(
+        &self,
+        engine: &str,
+        database: &str,
+        sql: &str,
+        timeout: Duration,
+    ) -> Result<String, String> {
+        if !is_safe_identifier(database) {
+            return Err(IDENTIFIER_HINT.into());
+        }
+        let (client, port) = self.sql_client(engine)?;
+        let port_s = port.to_string();
+        let args: Vec<String> = if engine == "postgres" {
+            [
+                "-U",
+                "postgres",
+                "-h",
+                "127.0.0.1",
+                "-p",
+                port_s.as_str(),
+                "-d",
+                database,
+                "-X",
+                "-A",
+                "-t",
+                "-F",
+                "	",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                sql,
+            ]
+            .iter()
+            .map(|a| a.to_string())
+            .collect()
+        } else {
+            [
+                "-u",
+                "root",
+                "-h",
+                "127.0.0.1",
+                "-P",
+                port_s.as_str(),
+                "-D",
+                database,
+                "--batch",
+                "--skip-column-names",
+                "-e",
+                sql,
+            ]
+            .iter()
+            .map(|a| a.to_string())
+            .collect()
+        };
+        let out: Captured = run_capture(&client, &args, None, &[], timeout);
+        if out.success() {
+            Ok(out.stdout)
+        } else {
+            Err(crate::redact::redact_text(out.combined().trim()))
+        }
+    }
+
     /// Runs SQL as root against the local engine and returns its tab-separated output.
     pub fn run_sql(&self, engine: &str, sql: &str) -> Result<String, String> {
         let (client, port) = self.sql_client(engine)?;
@@ -1861,6 +1925,48 @@ impl ServiceManager {
             format!("could not copy {from} to {to}: {e}")
         })?;
         self.drop_database(engine, from)
+    }
+
+    /// Copies `from` into a new database `to` (§176). PostgreSQL tries a template copy first
+    /// (fast, but it needs nobody connected to `from`) and falls back to dump and load.
+    pub fn clone_database(&self, engine: &str, from: &str, to: &str) -> Result<(), String> {
+        if !is_safe_identifier(from) || !is_safe_identifier(to) {
+            return Err(IDENTIFIER_HINT.into());
+        }
+        let existing = self.list_databases(engine)?;
+        if !existing.iter().any(|d| d == from) {
+            return Err(format!("there is no {engine} database called {from}"));
+        }
+        if existing.iter().any(|d| d == to) {
+            return Err(format!("{engine} already has a database called {to}"));
+        }
+        if engine == "postgres"
+            && self
+                .run_sql(
+                    engine,
+                    &format!("CREATE DATABASE \"{to}\" TEMPLATE \"{from}\""),
+                )
+                .is_ok()
+        {
+            return Ok(());
+        }
+        let tmp = self
+            .paths
+            .cache_dir()
+            .join(format!("clone-{engine}-{from}.sql"));
+        std::fs::create_dir_all(self.paths.cache_dir()).map_err(|e| e.to_string())?;
+        crate::dbbackup::dump_to(self, engine, from, &tmp)
+            .map_err(|e| format!("could not read {from} to copy it: {e}"))?;
+        if let Err(e) = self.create_database(engine, to) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+        let loaded = crate::dbbackup::load_into(self, engine, to, &tmp);
+        let _ = std::fs::remove_file(&tmp);
+        loaded.map_err(|e| {
+            let _ = self.drop_database(engine, to);
+            format!("could not copy {from} to {to}: {e}")
+        })
     }
 
     /// Removes a database and everything in it.

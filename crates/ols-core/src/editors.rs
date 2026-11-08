@@ -305,6 +305,28 @@ pub fn open_args(exe: &Path, path: &str) -> Vec<String> {
     }
 }
 
+/// The arguments that open `path` at `line` (§175). Editors that cannot jump to a line fall
+/// back to [`open_args`].
+pub fn open_args_at(exe: &Path, path: &str, line: u32) -> Vec<String> {
+    let stem = exe
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match stem.as_str() {
+        "code" | "code-insiders" | "codium" | "cursor" | "windsurf" | "trae" => {
+            vec!["-g".to_string(), format!("{path}:{line}")]
+        }
+        "phpstorm64" | "phpstorm" | "webstorm64" | "webstorm" | "idea64" | "idea" | "pycharm64"
+        | "pycharm" | "rider64" | "rider" | "goland64" | "goland" => {
+            vec!["--line".to_string(), line.to_string(), path.to_string()]
+        }
+        "sublime_text" | "subl" | "zed" => vec![format!("{path}:{line}")],
+        "notepad++" => vec![format!("-n{line}"), path.to_string()],
+        _ => open_args(exe, path),
+    }
+}
+
 /// `true` for `.cmd`/`.bat` shims, which must run through `cmd.exe /C`.
 pub fn is_shim(exe: &Path) -> bool {
     exe.extension()
@@ -315,6 +337,32 @@ pub fn is_shim(exe: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn open_args_at_jumps_to_the_line_for_each_editor_family() {
+        let p = r"C:\sites\shop\app\Foo.php";
+        let at = |exe: &str| open_args_at(Path::new(exe), p, 42);
+        let g = vec!["-g".to_string(), format!("{p}:42")];
+        for exe in [
+            r"C:\x\Code.exe",
+            r"C:\x\code.cmd",
+            r"C:\x\Cursor.exe",
+            r"C:\x\windsurf.exe",
+            r"C:\x\codium.exe",
+        ] {
+            assert_eq!(at(exe), g, "{exe}");
+        }
+        let jb = vec!["--line".to_string(), "42".to_string(), p.to_string()];
+        assert_eq!(at(r"C:\x\phpstorm64.exe"), jb);
+        assert_eq!(at(r"C:\x\rider.exe"), jb);
+        assert_eq!(at(r"C:\x\sublime_text.exe"), vec![format!("{p}:42")]);
+        assert_eq!(at(r"C:\x\zed.exe"), vec![format!("{p}:42")]);
+        assert_eq!(
+            at(r"C:\x\notepad++.exe"),
+            vec!["-n42".to_string(), p.to_string()]
+        );
+        assert_eq!(at(r"C:\x\unknown.exe"), vec![p.to_string()]);
+    }
 
     #[test]
     fn notepadpp_gets_folders_as_a_workspace_and_files_as_plain_paths() {

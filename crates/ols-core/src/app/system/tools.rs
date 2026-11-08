@@ -249,15 +249,65 @@ impl Inner {
 
     /// Starts `exe` on `path`, detached. Editor shims (`code.cmd`) go through `cmd.exe`.
     pub(crate) fn launch_editor(&self, exe: &Path, path: &str) -> Result<(), CoreError> {
+        self.launch_editor_args(exe, crate::editors::open_args(exe, path))
+    }
+
+    /// Opens `path` at `line` in the first visible editor (§175). `path` must be a file
+    /// inside a registered project, so this cannot be used to open arbitrary files.
+    pub fn open_in_editor_at(&self, path: &str, line: u32) -> Result<(), CoreError> {
+        let file = std::fs::canonicalize(path).map_err(|_| {
+            CoreError::failed_fix(
+                "OLS cannot open that file.",
+                format!("{path} does not exist."),
+                "Check the file still exists, then try again.",
+            )
+        })?;
+        let roots: Vec<PathBuf> = self
+            .projects
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter_map(|p| std::fs::canonicalize(&p.path).ok())
+            .collect();
+        if !file.is_file() || !roots.iter().any(|r| file.starts_with(r)) {
+            return Err(CoreError::failed_fix(
+                "OLS only opens files that belong to your projects.",
+                format!("{path} is not inside a registered project."),
+                "Add the folder as a project first, or open the file in your editor yourself.",
+            ));
+        }
+        let settings = self.settings.lock().unwrap();
+        let exe = crate::editors::list_all(&settings)
+            .into_iter()
+            .find(|e| !e.hidden && e.path.is_some())
+            .and_then(|e| e.path)
+            .ok_or_else(|| {
+                CoreError::failed_fix(
+                    "No editor is configured.",
+                    "Open with editor needs at least one editor in the editor list.",
+                    "Add an editor in Settings > General, then try again.",
+                )
+            })?;
+        drop(settings);
+        let exe = PathBuf::from(exe);
+        // `canonicalize` adds the `\\?\` prefix on Windows; editors do not understand it.
+        let shown = file.display().to_string();
+        let shown = shown.strip_prefix(r"\\?\").unwrap_or(&shown).to_string();
+        self.launch_editor_args(
+            &exe,
+            crate::editors::open_args_at(&exe, &shown, line.max(1)),
+        )
+    }
+
+    fn launch_editor_args(&self, exe: &Path, args: Vec<String>) -> Result<(), CoreError> {
         let mut cmd = if crate::editors::is_shim(exe) {
             let mut c = std::process::Command::new(crate::exec::cmd_path());
-            c.arg("/C")
-                .arg(exe)
-                .args(crate::editors::open_args(exe, path));
+            c.arg("/C").arg(exe).args(args);
             c
         } else {
             let mut c = std::process::Command::new(exe);
-            c.args(crate::editors::open_args(exe, path));
+            c.args(args);
             c
         };
         crate::exec::hide_window(&mut cmd);

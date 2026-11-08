@@ -1,9 +1,10 @@
-export type ToolTab = 'environment' | 'terminal' | 'env' | 'git' | 'workers' | 'backups' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug' | 'profiler' | 'load'
+export type ToolTab = 'environment' | 'terminal' | 'dumps' | 'env' | 'git' | 'workers' | 'backups' | 'repair' | 'mail' | 'composer' | 'node' | 'python' | 'xdebug' | 'profiler' | 'load'
 
 /** The project tools, in the order the site dialog lists them. */
 export const TOOL_TABS: { id: ToolTab; label: string }[] = [
   { id: 'environment', label: 'Environment' },
   { id: 'terminal', label: 'Terminal' },
+  { id: 'dumps', label: 'Dumps' },
   { id: 'env', label: '.env' },
   { id: 'git', label: 'Git' },
   { id: 'workers', label: 'Workers' },

@@ -12,6 +12,7 @@ import { SaveButton } from '@/components/SaveButton'
 import { BackupsPanel } from '@/components/project/BackupsPanel'
 import { WorkersPanel } from '@/components/project/WorkersPanel'
 import { XdebugDialog } from '@/components/XdebugDialog'
+import { DumpsPanel } from '@/components/project/DumpsPanel'
 import { ProfilerPanel } from '@/components/project/ProfilerPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -71,6 +72,7 @@ export function ProjectTools({ detail, start, refreshKey, tab }: { detail: Proje
     <>
       {tab === 'environment' && <EnvironmentPanel projectId={id} />}
       {tab === 'terminal' && <ProjectTerminal projectId={id} />}
+      {tab === 'dumps' && <DumpsPanel detail={detail} />}
       {tab === 'git' && <GitPanel projectId={id} />}
       {tab === 'workers' && <WorkersPanel projectId={id} />}
       {tab === 'backups' && <BackupsPanel project={detail.project} />}

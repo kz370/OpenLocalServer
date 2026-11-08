@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::net::TcpStream;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -81,6 +82,8 @@ pub struct PhpPools {
     external: Mutex<HashMap<String, PathBuf>>,
     /// PECL's package list, fetched once per session.
     pecl_packages: Mutex<Option<Vec<String>>>,
+    /// §175: add the dump viewer's `auto_prepend_file` to every php.ini (Settings switch).
+    dump_prepend: AtomicBool,
 }
 
 impl PhpPools {
@@ -96,6 +99,24 @@ impl PhpPools {
             pools: Mutex::new(HashMap::new()),
             external: Mutex::new(HashMap::new()),
             pecl_packages: Mutex::new(None),
+            dump_prepend: AtomicBool::new(false),
+        }
+    }
+
+    /// Turns the dump viewer's prepend file on or off for the next php.ini written.
+    pub fn set_dump_prepend(&self, on: bool) {
+        self.dump_prepend.store(on, Ordering::SeqCst);
+    }
+
+    pub fn dump_prepend_enabled(&self) -> bool {
+        self.dump_prepend.load(Ordering::SeqCst)
+    }
+
+    /// Restarts every running pool so it reads the current php.ini.
+    pub fn restart_running(&self) {
+        let versions: Vec<String> = self.pools.lock().unwrap().keys().cloned().collect();
+        for v in versions {
+            let _ = self.restart(&v);
         }
     }
 
@@ -235,6 +256,14 @@ impl PhpPools {
         }
         let dir = self.ini_dir(version);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+        // §175: the dump viewer's prepend file goes before the user's overrides, and only
+        // when nothing of theirs already sets `auto_prepend_file`.
+        if self.dump_prepend_enabled() && !crate::dumps::ini_sets_prepend(&dir) {
+            if let Some(line) = crate::dumps::prepend_ini_line(&self.paths) {
+                ini.push_str(&line);
+            }
+        }
 
         // User-defined ini directives: append overrides.ini and any conf.d/*.ini files
         // so custom configuration persists across restarts.
@@ -1206,6 +1235,55 @@ mod tests {
         let ini_disabled = std::fs::read_to_string(ini_dir.join("php.ini")).unwrap();
         assert!(ini_disabled.contains("opcache.enable = 0"));
         assert!(ini_disabled.contains("opcache.enable_cli = 0"));
+    }
+
+    #[test]
+    fn dump_prepend_is_only_added_when_switched_on_and_not_in_conflict() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::resolve_at(tmp.path());
+        let runtimes = Arc::new(RuntimeManager::new(paths.clone()));
+        let supervisor = Arc::new(ProcessSupervisor::new());
+        let pools = PhpPools::new(paths.clone(), runtimes, supervisor);
+        let fake_dir = tmp.path().join("php-8.4.24");
+        std::fs::create_dir_all(fake_dir.join("ext")).unwrap();
+        pools.set_external(vec![("8.4.24".to_string(), fake_dir.join("php.exe"))]);
+        let ini_dir = pools.ini_dir("8.4.24");
+        std::fs::create_dir_all(&ini_dir).unwrap();
+        std::fs::write(
+            ini_dir.join("overrides.ini"),
+            "memory_limit = 1G
+",
+        )
+        .unwrap();
+        let read = |p: &PhpPools| {
+            let dir = p.write_ini("8.4.24").unwrap();
+            std::fs::read_to_string(dir.join("php.ini")).unwrap()
+        };
+
+        let off = read(&pools);
+        assert!(!off.contains("auto_prepend_file"));
+
+        pools.set_dump_prepend(true);
+        let on = read(&pools);
+        let hook = on.find("auto_prepend_file = ").expect("prepend line");
+        let overrides = on.find("--- User Overrides").expect("overrides block");
+        assert!(hook < overrides, "ours must come before the user's block");
+
+        // Switching off again gives exactly the old ini back.
+        pools.set_dump_prepend(false);
+        assert_eq!(read(&pools), off);
+
+        // A user's own auto_prepend_file wins; ours is not added.
+        std::fs::write(
+            ini_dir.join("overrides.ini"),
+            "auto_prepend_file = \"C:/mine.php\"
+",
+        )
+        .unwrap();
+        pools.set_dump_prepend(true);
+        let conflict = read(&pools);
+        assert_eq!(conflict.matches("auto_prepend_file").count(), 1);
+        assert!(conflict.contains("C:/mine.php"));
     }
 
     #[test]

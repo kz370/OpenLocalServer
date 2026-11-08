@@ -1,7 +1,7 @@
 import type { BuildPlan, DockerizePlan, ComposeCheck, ComposeStack, ConnectInfo, ContainerDetails, DockerContainer, DockerDiskUsage, DockerImage, DockerVolume, PrunePlan, DockerStatus, ServicePreset } from './types/docker'
 import type { AiDetected, AiJobView, AiModel, AiPrompt, AiState, AiTestResult } from './types/ai'
 import type { DashboardData, HealthItem, HistoryEntry, LogSource, QuickCommand, QuickEntryDetail, QuickEntryView, QuickPlanResult, RunView, StartupSettings } from './types/apps'
-import type { CatalogEntry, CommandHistoryEntry, CustomInstall, CustomServiceDef, DbBackup, DefenderState, DevDriveInfo, XdebugProfile, XdebugProfileFile, GuardSnapshot, PhpUpgradeReport, SiteImportCandidate, ReclaimReport, DbTool, DeletedItem, EnvironmentManifest, PortStatus, ProcessId, ProcessInfo, Project, ProjectDetail, ProjectTypePreset, CustomProjectType, ProjectFolderInspection, ServiceAggregate, ServiceStatus, Shortcut, WpProject } from './types/base'
+import type { CatalogEntry, CommandHistoryEntry, CustomInstall, CustomServiceDef, DbBackup, DefenderState, BranchDbInfo, RemoteDb, DevDriveInfo, DumpStatus, XdebugProfile, XdebugProfileFile, GuardSnapshot, PhpUpgradeReport, SiteImportCandidate, ReclaimReport, DbTool, DeletedItem, EnvironmentManifest, PortStatus, ProcessId, ProcessInfo, Project, ProjectDetail, ProjectTypePreset, CustomProjectType, ProjectFolderInspection, ServiceAggregate, ServiceStatus, Shortcut, WpProject } from './types/base'
 import type { CommandSource, ComposerInfo, EditorInfo, EnvDiffRow, EnvFileInfo, EnvFileView, EnvironmentPlan, Finding, MailCheck, MailEnvPlan, ManifestInfo, MigratedDb, MigrationProgress, MigrationSource, Operation, PackageManagerInfo, PhpExtensions, SetupReport, SiteFolderInspection, SystemStats, VenvInfo, XdebugReport } from './types/environment'
 import type { ApiStatus, CatalogView, DoctorReport, GitBranch, GitCommit, GitStatus, LoadOverview, LoadProfile, LoadRun, NetworkStatus, PluginDetection, PluginInfo, RecordedRequest, RepairPlan, RepairReport, SearchHit, ShellMenuStatus, UpdateInfo, UpdaterStatus } from './types/system'
 import type { AutoBackupRun, AutoBackupStatus, BundleImportResult, BundlePreview, CloneResult, CpuCapStatus, ImportPreview, ModeResult, ModesView, Profile, ResourceLimits, RestoreResult, SettingsBackup, SnapshotInfo, TaskRun, TaskStatus, TaskView, TunnelProvider, TunnelStatus, WorkerPreset, WorkerStatus } from './types/tasks'
@@ -13,6 +13,10 @@ export type CoreResponse =
   | { type: 'ok' }
   | { type: 'stopped_everything'; still_running: string[] }
   | { type: 'process_started'; id: ProcessId }
+  | { type: 'dump_status'; status: DumpStatus }
+  | { type: 'branch_db'; info: BranchDbInfo }
+  | { type: 'remote_dbs'; remotes: RemoteDb[] }
+  | { type: 'anonymize_rules'; yaml: string | null }
   | { type: 'processes'; processes: ProcessInfo[] }
   | { type: 'process_output'; id: ProcessId; lines: string[] }
   | { type: 'command_result'; entry: CommandHistoryEntry }

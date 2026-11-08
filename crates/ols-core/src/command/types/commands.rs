@@ -789,6 +789,73 @@ pub enum CoreCommand {
     OpenInEditor {
         path: String,
     },
+    /// §177: pull a server database over SSH, with anonymizing. Never on the API or MCP.
+    ListRemoteDbs {
+        project_id: String,
+    },
+    SaveRemoteDb {
+        project_id: String,
+        remote: crate::remote_db::RemoteDb,
+        #[serde(default)]
+        password: Option<String>,
+    },
+    DeleteRemoteDb {
+        project_id: String,
+        id: String,
+    },
+    TestRemoteDb {
+        project_id: String,
+        id: String,
+    },
+    GetAnonymizeRules {
+        project_id: String,
+    },
+    SuggestAnonymizeRules {
+        project_id: String,
+    },
+    SaveAnonymizeRules {
+        project_id: String,
+        yaml: String,
+    },
+    PullRemoteDb {
+        project_id: String,
+        remote_id: String,
+        mode: String,
+        anonymize: bool,
+        #[serde(default)]
+        confirm_real_data: bool,
+    },
+    /// §176: Database per Git branch.
+    GetBranchDb {
+        project_id: String,
+    },
+    SetBranchDb {
+        project_id: String,
+        enabled: bool,
+        #[serde(default)]
+        clone_from: Option<String>,
+    },
+    DeleteBranchDb {
+        project_id: String,
+        database: String,
+    },
+    /// §175: turn the dump viewer on or off for every site.
+    SetDumpCapture {
+        on: bool,
+    },
+    GetDumpStatus {
+        project_id: String,
+    },
+    StartDumpServer {
+        project_id: String,
+    },
+    StopDumpServer {
+        project_id: String,
+    },
+    OpenInEditorAt {
+        path: String,
+        line: u32,
+    },
     OpenWith {
         path: String,
         app: String,

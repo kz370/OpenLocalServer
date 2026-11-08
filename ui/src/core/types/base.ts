@@ -448,3 +448,45 @@ export interface SiteBlocks {
   includes: string[]
 }
 export type SslProvider = 'local_ca' | 'lets_encrypt' | 'custom'
+
+/** §175 Dump viewer state for one project. */
+export interface DumpStatus {
+  enabled: boolean
+  conflict: boolean
+  supported: boolean
+  running: ProcessId | null
+  port: number | null
+}
+
+/** §176 Database per Git branch. */
+export interface BranchDbConfig {
+  enabled: boolean
+  engine: string
+  base_branch: string
+  base_database: string
+  clone_from: string
+  map: Record<string, string>
+}
+
+export interface BranchDbInfo {
+  config: BranchDbConfig | null
+  current_branch: string | null
+  current_database: string | null
+  orphaned: string[]
+  pending: string | null
+  config_cache: boolean
+}
+
+/** §177 A saved server database profile. The password lives in the OS keyring, never here. */
+export interface RemoteDb {
+  id: string
+  name: string
+  ssh_target: string
+  ssh_port: number | null
+  engine: string
+  database: string
+  db_user: string
+  db_host: string
+  db_port: number | null
+  has_password: boolean
+}

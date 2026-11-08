@@ -209,6 +209,7 @@ Grab the latest installer (`OLS-2.12.0-setup.exe`) from the [Releases page](http
 - **Portable by design:** Paths inside the install folder are stored relative, so you can rename the install folder or move it to another drive and every app-owned site keeps working.
 - **Free up space:** clear rebuildable `node_modules`, `vendor` and build caches from projects you have not used for a while (Projects → Free up space, or `olsc project reclaim`).
 - **Profiler:** profile a request with Xdebug and see the top functions and a call chart inside OLS (project Profiler tab).
+- **Dump viewer:** `dump()` and `dd()` from Laravel and Symfony show up inside OLS with clickable file and line (project Dumps tab).
 
 ### 🗄️ Databases & Services
 
@@ -222,6 +223,8 @@ Grab the latest installer (`OLS-2.12.0-setup.exe`) from the [Releases page](http
 - **Custom services:** Start, stop, and watch any program like a built-in service, with its own arguments, port, and health check (never run through a shell).
 - **Resource limits:** Per-service limits on memory, CPU allocation, and process counts.
 - **Migration guard:** before a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI) OLS saves the project's database; **Rewind** puts it back. `olsc db guard list|rewind`, MCP `ols_list_migration_snapshots`.
+- **Database per Git branch:** each branch gets its own copy of the database; switching branches switches `.env` (project Git tab, or `olsc db branch`).
+- **Pull a server database:** copy staging or production over SSH with fake emails, names, phones and passwords (project Backups tab, or `olsc db pull`).
 - **Import sites from Laragon, XAMPP and WampServer:** the import dialog lists their sites and adds the ones you pick, with trusted HTTPS; the old tools are not changed.
 
 ### 🐳 Docker

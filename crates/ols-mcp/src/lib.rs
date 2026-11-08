@@ -295,6 +295,20 @@ fn mcp_tools() -> Vec<McpTool> {
             }),
         },
         McpTool {
+            name: "ols_get_branch_db".into(),
+            description: Some(
+                "Show a project's Database per Git branch setting: whether it is on, the current branch and database, and the branch-to-database map. Read-only; turning it on or off is done in the app (project Git tab) or with `olsc db branch`."
+                    .to_string(),
+            ),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "project_id": { "type": "string", "description": "Project id from ols_list_projects." }
+                },
+                "required": ["project_id"]
+            }),
+        },
+        McpTool {
             name: "ols_list_databases".into(),
             description: Some(
                 "List databases across engines (MariaDB/MySQL, PostgreSQL, SQLite). 'engine' is optional: if omitted, databases across all engines are listed."
@@ -1106,6 +1120,9 @@ fn build_command(name: &str, args: &Value) -> Result<CoreCommand, String> {
         "ols_list_migration_snapshots" => C::ListGuardSnapshots {
             project_id: opt_str!("project_id"),
         },
+        "ols_get_branch_db" => C::GetBranchDb {
+            project_id: req_str!("project_id"),
+        },
         "ols_list_databases" => {
             let engine = opt_str!("engine").unwrap_or_else(|| "mariadb".into());
             let engine_lower = engine.to_ascii_lowercase();
@@ -1407,6 +1424,17 @@ fn guard_raw_command(cmd: CoreCommand) -> Result<CoreCommand, String> {
         C::AddDefenderExclusion { .. } | C::RemoveDefenderExclusion { .. } => Err(
             "ols_run_command cannot change Windows Defender exclusions: they weaken protection, \
              so a person has to agree in OLS (Settings -> Performance)."
+                .to_string(),
+        ),
+        C::ListRemoteDbs { .. }
+        | C::SaveRemoteDb { .. }
+        | C::DeleteRemoteDb { .. }
+        | C::TestRemoteDb { .. }
+        | C::GetAnonymizeRules { .. }
+        | C::SuggestAnonymizeRules { .. }
+        | C::SaveAnonymizeRules { .. }
+        | C::PullRemoteDb { .. } => Err(
+            "ols_run_command cannot use server database profiles or pull a server database: that              copies real customer data, so a person has to do it in OLS (project Backups tab)."
                 .to_string(),
         ),
         C::StartTunnel { id, .. } => Ok(C::StartTunnel {
@@ -2687,6 +2715,32 @@ mod tests {
             }
             _ => panic!("expected ListGuardSnapshots"),
         }
+    }
+
+    #[test]
+    fn raw_command_refuses_server_database_pulls() {
+        let cmd = CoreCommand::ListRemoteDbs {
+            project_id: "shop".into(),
+        };
+        assert!(guard_raw_command(cmd).is_err());
+        let cmd = CoreCommand::PullRemoteDb {
+            project_id: "shop".into(),
+            remote_id: "staging".into(),
+            mode: "replace".into(),
+            anonymize: true,
+            confirm_real_data: false,
+        };
+        assert!(guard_raw_command(cmd).is_err());
+    }
+
+    #[test]
+    fn build_command_get_branch_db() {
+        let cmd = build_command("ols_get_branch_db", &json!({ "project_id": "shop" })).unwrap();
+        assert!(matches!(
+            cmd,
+            CoreCommand::GetBranchDb { ref project_id } if project_id == "shop"
+        ));
+        assert!(build_command("ols_get_branch_db", &json!({})).is_err());
     }
 
     #[test]

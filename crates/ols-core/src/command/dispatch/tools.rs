@@ -30,6 +30,25 @@ impl Core {
                         report: i.set_site_profiling(&hostname, on)?,
                     })
                 }
+                C::SetDumpCapture { on } => {
+                    tracing::info!(command = "set_dump_capture", on);
+                    i.set_dump_capture(on)?;
+                    Ok(R::Ok)
+                }
+                C::GetDumpStatus { project_id } => Ok(R::DumpStatus {
+                    status: i.dump_status(&project_id)?,
+                }),
+                C::StartDumpServer { project_id } => {
+                    tracing::info!(command = "start_dump_server", project = %project_id);
+                    Ok(R::ProcessStarted {
+                        id: i.start_dump_server(&project_id)?,
+                    })
+                }
+                C::StopDumpServer { project_id } => {
+                    tracing::info!(command = "stop_dump_server", project = %project_id);
+                    i.stop_dump_server(&project_id)?;
+                    Ok(R::Ok)
+                }
                 C::GetDefenderStatus => {
                     let s = i.defender_status();
                     Ok(R::DefenderStatus {

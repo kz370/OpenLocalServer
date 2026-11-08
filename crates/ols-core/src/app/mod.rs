@@ -131,6 +131,8 @@ pub struct Inner {
     pub defender_cache: Mutex<Option<crate::defender::DefenderState>>,
     /// §171: newest PHP upgrade report per site.
     pub php_upgrade: Mutex<HashMap<String, crate::php_upgrade::PhpUpgradeReport>>,
+    /// §175: running dump servers, project id -> (process, port).
+    pub dump_servers: Mutex<HashMap<String, (crate::process::ProcessId, u16)>>,
     pub(crate) pending_site_undo: Mutex<HashMap<String, PendingSiteUndo>>,
     pub(crate) project_events: broadcast::Sender<()>,
 }
@@ -327,12 +329,16 @@ impl Inner {
             reclaim: Mutex::new(None),
             defender_cache: Mutex::new(None),
             php_upgrade: Mutex::new(HashMap::new()),
+            dump_servers: Mutex::new(HashMap::new()),
             pending_site_undo: Mutex::new(HashMap::new()),
             project_events,
             paths,
         });
         core.start_projects_watcher();
         core.sync_php_external();
+        core.init_dump_capture();
+        crate::remote_db::cleanup_leftovers(&core.paths.cache_dir());
+        core.ensure_branch_watcher();
         core.services.set_limits(core.resource_limits());
         core.web.set_limits(core.resource_limits());
         {

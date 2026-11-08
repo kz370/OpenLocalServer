@@ -49,7 +49,11 @@ impl Inner {
         name: &str,
         history_line: &str,
     ) -> Result<ProcessId, CoreError> {
-        let (executable, full_args, env) = self.project_program(program, args, project_id)?;
+        let (executable, full_args, mut env) = self.project_program(program, args, project_id)?;
+        // §175: dumps from this command go to the project's dump viewer while it runs.
+        if let Some(pid) = project_id {
+            env.extend(self.dump_env(pid));
+        }
         // §168: save the project's database before a command that changes its structure. If
         // the copy cannot be made the command does not start.
         if let Some(pid) = project_id {

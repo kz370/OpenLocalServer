@@ -180,6 +180,13 @@ impl WorkerStore {
 #[derive(Default)]
 pub struct WorkerProcesses(std::sync::Mutex<HashMap<String, Vec<ProcessId>>>);
 
+impl WorkerProcesses {
+    /// `true` while the worker has supervised processes.
+    pub fn is_running(&self, id: &str) -> bool {
+        self.0.lock().unwrap().contains_key(id)
+    }
+}
+
 impl Inner {
     pub fn workers_for(&self, project_id: &str) -> Vec<Worker> {
         self.workers

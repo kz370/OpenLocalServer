@@ -171,3 +171,59 @@ mod docker_cli {
         }
     }
 }
+
+mod db_branch_cli {
+    use crate::args::{BranchCmd, Cli, Cmd, DbCmd};
+    use clap::Parser;
+
+    #[test]
+    fn db_branch_commands_parse() {
+        let cli =
+            Cli::try_parse_from(["olsc", "db", "branch", "on", "shop", "--from-current"]).unwrap();
+        match cli.cmd {
+            Cmd::Db(DbCmd::Branch(BranchCmd::On {
+                project,
+                from_current,
+            })) => {
+                assert_eq!(project, "shop");
+                assert!(from_current);
+            }
+            _ => panic!("not db branch on"),
+        }
+        assert!(Cli::try_parse_from(["olsc", "db", "branch", "status", "shop"]).is_ok());
+        assert!(Cli::try_parse_from(["olsc", "db", "branch", "off", "shop"]).is_ok());
+    }
+}
+
+mod db_pull_cli {
+    use crate::args::{Cli, Cmd, DbCmd};
+    use clap::Parser;
+
+    #[test]
+    fn db_pull_parses() {
+        let cli = Cli::try_parse_from([
+            "olsc",
+            "db",
+            "pull",
+            "shop",
+            "staging",
+            "--anonymize",
+            "--new",
+        ])
+        .unwrap();
+        match cli.cmd {
+            Cmd::Db(DbCmd::Pull {
+                project,
+                remote,
+                anonymize,
+                new,
+                yes_real_data,
+            }) => {
+                assert_eq!((project.as_str(), remote.as_str()), ("shop", "staging"));
+                assert!(anonymize && new && !yes_real_data);
+            }
+            _ => panic!("not db pull"),
+        }
+        assert!(Cli::try_parse_from(["olsc", "db", "remotes", "shop"]).is_ok());
+    }
+}

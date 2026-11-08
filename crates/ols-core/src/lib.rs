@@ -3,9 +3,11 @@
 
 pub mod acme;
 pub mod ai;
+pub mod anonymize;
 pub mod api;
 pub mod app;
 pub mod auto_backup;
+pub mod branch_db;
 pub mod ca;
 pub mod catalog;
 pub mod catalogs;
@@ -27,6 +29,7 @@ pub mod diagnostics;
 pub mod dns;
 pub mod docker;
 pub mod domain;
+pub mod dumps;
 pub mod editors;
 pub mod elevate;
 pub mod envfile;
@@ -62,6 +65,7 @@ pub mod project_tools;
 pub mod quickapp;
 pub mod reclaim;
 pub mod redact;
+pub mod remote_db;
 pub mod repair;
 pub mod resolver;
 pub mod resources;
