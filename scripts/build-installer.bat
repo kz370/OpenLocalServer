@@ -38,6 +38,21 @@ rem and installed next to the app, so a default install needs no configuration.
 set "CPULIMIT_SRC=%ROOT%vendor\cpulimit\cpulimit.exe"
 set "CPULIMIT_SHA=A54EACA4BD1BCCDCBAA69E31BFFE0EEDC2019E9EFCDE7BDE06F31542B7746DA3"
 
+rem The whole build runs under that same cpulimit, capped by OLS_CPU_LIMIT (percent, 1-100,
+rem default 60). Set OLS_CPU_LIMIT=off (or 0) to build without a cap. The script starts itself
+rem again under the limiter once (OLS_CPU_LIMITED stops a loop), after the pinned hash of the
+rem vendored cpulimit.exe is checked.
+if not defined OLS_CPU_LIMIT set "OLS_CPU_LIMIT=60"
+if defined OLS_CPU_LIMITED goto :cpu_ok
+if /i "%OLS_CPU_LIMIT%"=="off" goto :cpu_ok
+if "%OLS_CPU_LIMIT%"=="0" goto :cpu_ok
+call :hash_matches "%CPULIMIT_SRC%" || goto :fail
+set "OLS_CPU_LIMITED=1"
+echo Building at %OLS_CPU_LIMIT%%% CPU. Set OLS_CPU_LIMIT=off to remove the cap.
+"%CPULIMIT_SRC%" %OLS_CPU_LIMIT% cmd.exe /c ""%~f0" %*"
+exit /b %ERRORLEVEL%
+:cpu_ok
+
 for /f "tokens=2 delims==" %%v in ('findstr /b /c:"version = " "%ROOT%Cargo.toml"') do if not defined VERSION set "VERSION=%%~v"
 rem Strip spaces/quotes (tokens=2 leaves a leading space, breaking %%~v).
 set "VERSION=%VERSION: =%"

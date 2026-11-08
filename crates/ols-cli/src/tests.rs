@@ -53,6 +53,43 @@ mod docker_cli {
     }
 
     #[test]
+    fn dockerize_parses_and_defaults_to_a_plan_only() {
+        match docker(&["dockerize", "shop"]) {
+            DockerCmd::Dockerize {
+                project,
+                create,
+                services,
+                replace_compose,
+                ..
+            } => {
+                assert_eq!(project, "shop");
+                assert!(!create && !replace_compose && services.is_none());
+            }
+            _ => panic!("not dockerize"),
+        }
+        match docker(&[
+            "dockerize",
+            "shop",
+            "--mode",
+            "prod",
+            "--services",
+            "mariadb,redis",
+            "--create",
+        ]) {
+            DockerCmd::Dockerize {
+                services, create, ..
+            } => {
+                assert_eq!(services.unwrap(), vec!["mariadb", "redis"]);
+                assert!(create);
+            }
+            _ => panic!("not dockerize"),
+        }
+        // Replacing the compose file only makes sense when writing.
+        assert!(parse(&["docker", "dockerize", "shop", "--replace-compose"]).is_err());
+        assert!(parse(&["docker", "dockerize", "shop", "--mode", "staging"]).is_err());
+    }
+
+    #[test]
     fn every_form_parses() {
         assert!(matches!(docker(&["status"]), DockerCmd::Status));
         assert!(matches!(docker(&["ps"]), DockerCmd::Ps { all: false }));
@@ -85,7 +122,9 @@ mod docker_cli {
             docker(&["compose", "list"]),
             DockerCmd::Compose(ComposeCmd::List)
         ));
-        for a in ["up", "down", "stop", "start", "restart", "pull", "build"] {
+        for a in [
+            "up", "down", "stop", "start", "restart", "pull", "build", "watch",
+        ] {
             assert!(
                 parse(&["docker", "compose", a, "compose.yaml", "--service", "db"]).is_ok(),
                 "{a}"

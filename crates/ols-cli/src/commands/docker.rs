@@ -3,10 +3,11 @@
 //! containers, images or volumes, recreating, running commands inside a container and
 //! cleaning up for real stay in the app.
 
-use crate::args::{ComposeCmd, ComposeTarget, ContainerArg, DockerCmd};
+use crate::args::{ComposeCmd, ComposeTarget, ContainerArg, DockerCmd, DockerizeModeArg};
 use crate::ctx::{table, Ctx, R};
 use ols_core::command::{CoreCommand, CoreResponse};
 use ols_core::docker::compose::ComposeAction;
+use ols_core::docker::dockerize::{DockerizeMode, DockerizeOptions};
 use ols_core::docker::storage::PruneTargets;
 use ols_core::docker::ContainerAction;
 use ols_core::tasks::TaskState;
@@ -30,6 +31,22 @@ pub fn docker(ctx: &Ctx, cmd: DockerCmd) -> R<()> {
             follow(ctx, r)
         }
         DockerCmd::Compose(c) => compose(ctx, c),
+        DockerCmd::Dockerize {
+            project,
+            mode,
+            services,
+            create,
+            replace_compose,
+            show_files,
+        } => dockerize(
+            ctx,
+            &project,
+            mode,
+            services,
+            create,
+            replace_compose,
+            show_files,
+        ),
         DockerCmd::Prune {
             stopped,
             dangling,
@@ -262,6 +279,7 @@ fn compose(ctx: &Ctx, cmd: ComposeCmd) -> R<()> {
         ComposeCmd::Restart(t) => compose_action(ctx, t, ComposeAction::Restart),
         ComposeCmd::Pull(t) => compose_action(ctx, t, ComposeAction::Pull),
         ComposeCmd::Build(t) => compose_action(ctx, t, ComposeAction::Build),
+        ComposeCmd::Watch(t) => compose_action(ctx, t, ComposeAction::Watch),
         ComposeCmd::Check { file } => {
             let path = file.display().to_string();
             let content = std::fs::read_to_string(&file)
@@ -296,6 +314,105 @@ fn compose_action(ctx: &Ctx, t: ComposeTarget, action: ComposeAction) -> R<()> {
         service: t.service,
     })?;
     follow(ctx, r)
+}
+
+fn dockerize(
+    ctx: &Ctx,
+    project: &str,
+    mode: DockerizeModeArg,
+    services: Option<Vec<String>>,
+    create: bool,
+    replace_compose: bool,
+    show_files: bool,
+) -> R<()> {
+    let project_id = ctx.project_id(project)?;
+    let options = DockerizeOptions {
+        mode: match mode {
+            DockerizeModeArg::Dev => DockerizeMode::Dev,
+            DockerizeModeArg::Prod => DockerizeMode::Prod,
+        },
+        services,
+    };
+    let r = if create {
+        ctx.call(CoreCommand::CreateDockerize {
+            project_id,
+            overwrite_compose: replace_compose,
+            options,
+        })?
+    } else {
+        ctx.call(CoreCommand::PlanDockerize {
+            project_id,
+            options,
+        })?
+    };
+    if ctx.print_json(&r) {
+        return Ok(());
+    }
+    let CoreResponse::DockerizePlan { plan } = r else {
+        return Err(unexpected());
+    };
+    println!("Kind: {} ({:?} mode)", plan.kind, plan.mode);
+    for d in &plan.detected {
+        println!("  found: {d}");
+    }
+    let picked: Vec<&str> = plan
+        .services
+        .iter()
+        .filter(|s| s.selected)
+        .map(|s| s.id.as_str())
+        .collect();
+    println!(
+        "Services: {}",
+        if picked.is_empty() {
+            "none".into()
+        } else {
+            picked.join(", ")
+        }
+    );
+    if !plan.workers.is_empty() {
+        println!("Extra processes: {}", plan.workers.join(", "));
+    }
+    if !plan.secrets.is_empty() {
+        println!(
+            "{} password(s) {} in the Windows credential store; never written to the files.",
+            plan.secrets.len(),
+            if create { "kept" } else { "would be generated" }
+        );
+    }
+    println!("Host port: {}", plan.port);
+    if !plan.existing.is_empty() {
+        println!("Kept as they are: {}", plan.existing.join(", "));
+    }
+    for n in &plan.notes {
+        println!("note: {n}");
+    }
+    if !plan.unknown_extensions.is_empty() {
+        println!("Needs manual setup: {}", plan.unknown_extensions.join(", "));
+    }
+    println!("\n{}", plan.disclaimer);
+    for c in &plan.checklist {
+        println!("  - {c}");
+    }
+    if show_files {
+        if let Some(df) = &plan.dockerfile {
+            println!("\n--- Dockerfile ---\n{df}");
+        }
+        println!("\n--- compose.yaml ---\n{}", plan.compose);
+        if let Some(di) = &plan.dockerignore {
+            println!("\n--- .dockerignore ---\n{di}");
+        }
+    }
+    if create {
+        println!("\nFiles written. Compose file: {}", plan.compose_path);
+        let verb = if plan.watch { "watch" } else { "up" };
+        println!(
+            "Start it with: olsc docker compose {verb} \"{}\"",
+            plan.compose_path
+        );
+    } else {
+        println!("\nNothing was written. Add --create to write the files.");
+    }
+    Ok(())
 }
 
 fn prune_plan(ctx: &Ctx, targets: PruneTargets) -> R<()> {

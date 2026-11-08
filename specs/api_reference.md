@@ -72,7 +72,7 @@ Global `--json` for raw pretty JSON. Auto-starts `olsc daemon` when app closed (
 - `olsc tunnel list|start <name> [-y]|stop`
 - `olsc quick-app list` | `olsc quick-command list|run <id> [--project]`
 - `olsc worker list|start|stop` | `olsc snapshot list|create --label`
-- `olsc docker status|ps [--all]|start|stop|restart|pause|unpause <container>|logs <container> [-n 200]|images|volumes|df [--fresh]|pull <image>|compose list|compose up|down|stop|start|restart|pull|build <file> [--service <name>]|compose check <file>|prune --dry-run [--stopped] [--dangling] [--unused-images] [--build-cache]` (2.11.0; each maps to the `CoreCommand` of the same Docker page action; long actions follow their task and print the steps; `prune` requires `--dry-run`; there is no rm, volume rm, recreate or exec)
+- `olsc docker status|ps [--all]|start|stop|restart|pause|unpause <container>|logs <container> [-n 200]|images|volumes|df [--fresh]|pull <image>|compose list|compose up|down|stop|start|restart|pull|build <file> [--service <name>]|compose watch <file> [--service <name>]|dockerize <project> [--mode dev|prod] [--services a,b] [--create] [--replace-compose] [--show-files]|prune --dry-run [--stopped] [--dangling] [--unused-images] [--build-cache]` (2.11.0; each maps to the `CoreCommand` of the same Docker page action; long actions follow their task and print the steps; `prune` requires `--dry-run`; there is no rm, volume rm, recreate or exec)
 - `olsc plugin list|install|enable|disable|remove`
 - `olsc catalog list|add|remove|refresh|install`
 - `olsc api status|enable [--port] [--operate]|disable|token`

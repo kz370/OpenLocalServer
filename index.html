@@ -185,7 +185,7 @@
             </article>
             <article class="card reveal">
               <h3>CLI, warnings and bundles</h3>
-              <p>Manage Docker with <code>olsc docker</code>, get Diagnostics warnings for stopped or missing site containers, and keep Docker details when you export a site bundle.</p>
+              <p>Manage Docker with <code>olsc docker</code> (including <code>olsc docker dockerize</code> and <code>compose watch</code>), get Diagnostics warnings for stopped or missing site containers, and keep Docker details when you export a site bundle.</p>
             </article>
           </div>
         </div>
@@ -723,7 +723,12 @@
 <span class="k">olsc</span> tunnel start <span class="p">--provider</span> cloudflared <span class="p">--port</span> 443
 <span class="k">olsc</span> worker run <span class="p">--queue</span> default
 <span class="k">olsc</span> snapshot create <span class="p">--name</span> <span class="s">"before-upgrade"</span>
-<span class="k">olsc</span> search <span class="s">"mailpit"</span></code></pre>
+<span class="k">olsc</span> search <span class="s">"mailpit"</span>
+
+<span class="k">olsc</span> docker ps                    <span class="c"># containers</span>
+<span class="k">olsc</span> docker dockerize my-site     <span class="c"># plan: what OLS found, nothing written</span>
+<span class="k">olsc</span> docker dockerize my-site <span class="p">--create</span> <span class="p">--services</span> mariadb,redis
+<span class="k">olsc</span> docker compose watch compose.yaml</code></pre>
               </div>
               <h3 class="spaced">A project, end to end</h3>
               <div class="code">

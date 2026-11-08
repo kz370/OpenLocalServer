@@ -432,6 +432,27 @@ pub enum DockerCmd {
     /// Compose stacks.
     #[command(subcommand)]
     Compose(ComposeCmd),
+    /// Dockerize a project: shows the plan; `--create` writes the Dockerfile, compose file and
+    /// .dockerignore. Existing files are never overwritten.
+    Dockerize {
+        /// Project name or id (see `olsc project list`).
+        project: String,
+        /// `dev` (default) copies the project and supports `compose watch`; `prod` builds a lean non-root image.
+        #[arg(long, value_enum, default_value_t = DockerizeModeArg::Dev)]
+        mode: DockerizeModeArg,
+        /// Service ids to add, comma separated (default: what OLS detects). Example: mariadb,redis.
+        #[arg(long, value_delimiter = ',')]
+        services: Option<Vec<String>>,
+        /// Write the files. Without it nothing is written.
+        #[arg(long)]
+        create: bool,
+        /// With --create: replace an existing compose file (the old one is backed up).
+        #[arg(long, requires = "create")]
+        replace_compose: bool,
+        /// Also print the generated files.
+        #[arg(long)]
+        show_files: bool,
+    },
     /// Show what a cleanup would remove. Removing is done in the app, never from here.
     Prune {
         /// Required: this command only shows the plan.
@@ -450,6 +471,12 @@ pub enum DockerCmd {
         #[arg(long)]
         build_cache: bool,
     },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum DockerizeModeArg {
+    Dev,
+    Prod,
 }
 
 #[derive(clap::Args)]
@@ -480,6 +507,8 @@ pub enum ComposeCmd {
     Restart(ComposeTarget),
     Pull(ComposeTarget),
     Build(ComposeTarget),
+    /// Start the stack and keep it in sync with your edits (`docker compose watch`).
+    Watch(ComposeTarget),
     /// Check a compose file without changing it.
     Check {
         file: PathBuf,
