@@ -18,6 +18,8 @@ Feature release. Full notes: [`release-notes/v2.10.0.md`](./release-notes/v2.10.
 - Settings → Sidebar: hide pages you don't use.
 - Projects: select several projects, then Create sites, Hide or Remove from list.
 - Projects and Sites: group or sort by root folder.
+- Import databases: a message when the import finishes, the selection is cleared, and an import report (imported, skipped or failed per database, with the reason) that you can copy or save as a text file. No passwords in the report.
+- Dismiss all button under the notifications; notifications for running tasks stay.
 
 ### Changed & Improved
 - Docker does nothing until its page is open, and its lists load from a cache.

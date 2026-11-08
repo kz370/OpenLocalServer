@@ -3,6 +3,7 @@ UI Pages (Dashboard, Sites, Tunnels, WebServer, Databases, Services, Runtimes, C
 UI Pages & Dialogs | uses | NotificationSystem (ui/src/lib/notify.ts) for toasts, Undo actions, and batch summaries
 Titlebar | mounts | NotificationsPopover (ui/src/components/NotificationsPopover.tsx) for recent notification history
 App | mounts | NotificationHost (ui/src/components/NotificationHost.tsx) for global toast rendering
+NotificationHost | calls | dismissAllNotifications (ui/src/lib/notify.ts) from the Dismiss all (N) pill at the bottom of the stack, shown when 2+ non-progress toasts are queued; progress toasts stay
 App | imports | all page modules with static imports so every page is ready at shell startup and navigation does not wait for a page chunk to load, except DockerPage, which App loads with React.lazy (optional feature, own chunk, kept out of the startup bundle)
 App | mounts | TooltipProvider (ui/src/components/ui/tooltip.tsx) for modern themed tooltips and global title/data-tooltip interception; tooltip labels wrap long paths/URLs and stay within viewport width
 UI (core/client.ts) | calls | Tauri invoke('run_command')
@@ -322,6 +323,7 @@ MigrateDialog | submits | scanned source batches sequentially in folder-selectio
 MigrateDialog | enables import | only after every selected source has been scanned and at least one database is selected; action remains visible while disabled
 MigrateDialog | collapses | scanned source rows via local `collapsed` ids; a successful scan or rescan re-expands that source
 MigrateDialog | renders | DatabasePicker per scanned source; filter text lives in SourceImport.filter (view only, reset on rescan) and never changes picks outside the visible rows
+MigrateDialog | reports | finished import runs via notify toast and ImportReportPanel (state snapshot of per-source MigratedDb results and errors); clears SourceImport.picked for completed sources; saves the text report through plugin-dialog save + plugin-fs writeTextFile
 MigrateDialog | counts selected databases | uses functional state updates so rapid checkbox changes are not lost from the count or import request
 MigrationRecovery | repairs after restart | restores the safety backup for interrupted replacements or removes a partial new destination; failed recovery remains queued for retry
 ReplaceWithBackup | preserves | existing target database via SQL backup before drop; failed import attempts to restore it

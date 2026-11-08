@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   type NotificationItem,
   clearNotificationHistory,
+  dismissAllNotifications,
   dismissNewestNotification,
   dismissNotification,
   evaluateNotificationConditions,
@@ -119,6 +120,38 @@ test('dismissNewestNotification pops the latest notification', () => {
 
   dismissNotification(id1)
   dismissNotification(id2)
+})
+
+test('dismissAllNotifications clears toasts but keeps progress toasts and history', () => {
+  resetNotificationsForTest()
+  let visible: NotificationItem[] = []
+  const unsub = subscribeNotifications((items) => {
+    visible = items
+  })
+
+  notify.success('Saved')
+  notify.warning('Careful')
+  notify.error('Broke')
+  const task = notify.progress('Downloading')
+  assert.equal(visible.length, 4)
+
+  assert.equal(dismissAllNotifications(), 3)
+  assert.deepEqual(visible.map((item) => item.type), ['progress'])
+
+  let historyLen = 0
+  const unsubHistory = subscribeNotificationHistory((items) => {
+    historyLen = items.length
+  })
+  assert.ok(historyLen >= 3)
+
+  // Nothing left to dismiss: returns 0 and keeps the progress toast.
+  assert.equal(dismissAllNotifications(), 0)
+  assert.equal(visible.length, 1)
+
+  task.dismiss()
+  unsubHistory()
+  unsub()
+  resetNotificationsForTest()
 })
 
 test('notification de-duplication: same error three times in a row produces one entry with x3', () => {

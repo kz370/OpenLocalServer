@@ -60,3 +60,6 @@ ignored/*
 *.ilk
 target-ci/*
 target-audit/*
+
+alternativeto-submission/*
+producthunt-submission/*

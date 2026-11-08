@@ -1,10 +1,11 @@
-import { AlertCircle, AlertTriangle, Check, CheckCircle2, Copy, FileText, Info, RotateCcw, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, BrushCleaning, Check, CheckCircle2, Copy, FileText, Info, RotateCcw, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
 import {
   type NotificationItem,
+  dismissAllNotifications,
   dismissNewestNotification,
   dismissNotification,
   initGlobalNotificationListeners,
@@ -34,6 +35,8 @@ export function NotificationHost({ onNavigateLogs }: { onNavigateLogs?: (source?
 
   // Stack at most 4 visible; older ones queue
   const visible = items.slice(0, 4)
+  // Progress toasts track running tasks, so Dismiss all leaves them alone.
+  const dismissibleCount = items.filter((item) => item.type !== 'progress').length
 
   if (visible.length === 0) return null
 
@@ -42,6 +45,22 @@ export function NotificationHost({ onNavigateLogs }: { onNavigateLogs?: (source?
       aria-label="Notifications"
       className="fixed bottom-4 right-4 z-[9999] flex max-w-sm w-full flex-col-reverse gap-2.5 pointer-events-none"
     >
+      {/* First child of a column-reverse stack, so it sits at the bottom, below the toasts. */}
+      {dismissibleCount >= 2 && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => dismissAllNotifications()}
+            aria-label={`Dismiss all ${dismissibleCount} notifications`}
+            title="Dismiss all notifications"
+            // Card pill tinted with theme primary, foreground text, primary border and outer glow
+            // that strengthens on hover/focus.
+            className="pointer-events-auto inline-flex cursor-pointer items-center gap-2 rounded-full border border-primary/80 bg-[color-mix(in_srgb,var(--color-primary)_22%,var(--color-card))] px-4 py-1.5 text-xs font-semibold text-foreground shadow-[0_0_10px_-2px_var(--color-primary)] backdrop-blur-xl transition-all duration-200 hover:border-primary hover:bg-[color-mix(in_srgb,var(--color-primary)_32%,var(--color-card))] hover:shadow-[0_0_16px_0_var(--color-primary)] focus-visible:outline-none focus-visible:shadow-[0_0_16px_0_var(--color-primary)]"
+          >
+            <BrushCleaning className="size-3.5 text-primary" /> Dismiss all ({dismissibleCount})
+          </button>
+        </div>
+      )}
       {visible.map((item) => (
         <ToastItem key={item.id} item={item} onNavigateLogs={onNavigateLogs} />
       ))}

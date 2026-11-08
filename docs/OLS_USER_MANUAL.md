@@ -373,6 +373,8 @@ olsc guide
 - **Select several projects:** tick projects on **Projects**, then **Create sites**, **Hide** or **Remove from list** for all of them.
 - **Group and sort by root folder:** on **Projects** and **Sites**, group rows under their parent folder or sort by it. Your choice is remembered.
 - **Faster lists:** Sites and Projects load faster and show a spinner while loading. Remove from list is instant and works when the folder is gone.
+- **Import databases report:** when an import finishes, OLS shows a message, clears your selection, and adds step 4 **Import report**: every database as imported, skipped or failed, with the reason. Use **Copy** or **Save report…** to keep it. Passwords are never included.
+- **Dismiss all notifications:** when two or more notifications are showing, a **Dismiss all** button under them clears them in one click. Notifications for tasks that are still running stay.
 
 - **Security:** DDNS credentials are kept in the Windows credential store (moved on the first start; not included in snapshots or site bundles). PECL extensions install only when OLS knows their SHA-256. The compose editor saves only stacks OLS knows, and the AI assistant (MCP) can't read stored passwords.
 - **Fixes:** Compose **Check** port conflicts, Docker sites switching every container, tunnels starting once, text like `<name>` showing in the notes, and no browser menu on right-click.

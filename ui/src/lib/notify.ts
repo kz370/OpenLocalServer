@@ -529,6 +529,20 @@ export function dismissNewestNotification(): boolean {
   return true
 }
 
+/**
+ * Dismisses every visible toast except running progress toasts, which belong to a task
+ * that is still working and close themselves when it ends. History is kept.
+ * Returns how many toasts were dismissed.
+ */
+export function dismissAllNotifications(): number {
+  const kept = toasts.filter((t) => t.type === 'progress')
+  const removed = toasts.length - kept.length
+  if (removed === 0) return 0
+  toasts = kept
+  emitToasts()
+  return removed
+}
+
 export function subscribeNotifications(fn: (items: NotificationItem[]) => void): () => void {
   listeners.add(fn)
   fn([...toasts])
