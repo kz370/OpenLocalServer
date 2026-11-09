@@ -352,6 +352,10 @@ api.rs OPERATE | allows | docker_container_action, start_docker_desktop (reads c
 ols-mcp | maps | ols_docker_* tools and ols_unignore_site to their CoreCommands
 Sidebar | reads | navItems (NAV_GROUPS, LOCKED_NAV_ITEMS) and useHiddenSidebarItems; shows an item when it is locked, not hidden, the current page, or Tunnels while a site is public (§59); drops a group heading when all its items are hidden
 Settings page | mounts | SidebarItemsSettings as its own "Sidebar" section (after Appearance)
+Settings page | mounts | SettingsNav (SettingsSearch, SectionTabs, OnThisPage) for grouped sidebar, search, tabs and in-page chips
+SettingsSearch | calls | jumpToSetting -> scrolls to the matching setting row
+Settings page | passes | OnThisPage to PageLayout toolbar (non-scrolling) when usePageHeadings finds 3+ card titles
+SystemCard (ReleaseCards) | sets | data-toc-label="System" so the On this page chip is short
 SidebarItemsSettings | calls | setHiddenSidebarItems -> set_setting ui.sidebar.hidden
 sidebarVisibility | calls | get_setting ui.sidebar.hidden (once per session)
 CommandPalette | links | every page including hidden ones (hidden pages stay reachable)
@@ -437,6 +441,8 @@ idle::tick | stops | ServiceManager::stop -> spawn_waker (127.0.0.1:<port>) -> I
 Core::dispatch | releases | IdleState::release before Start/Stop/Restart/StopAll
 Inner::sync_mdns | calls | mdns::Responder::{start, set_names} (names = shared sites' Domain.lan_local; restarted on a new LAN address; dropped when nothing is shared)
 lan::tick | calls | Inner::sync_mdns
+lan::tick / dispatch::StartService(web) | calls | lan::restore_always -> Inner::set_site_lan (sites with lan_always)
+dispatch::SetSiteLanAlways | calls | Inner::set_site_lan_always -> DomainStore::update + set_site_lan
 web::manager apply | reads | Domain.lan_local (server name) ; certs::names_for reads Domain.lan_local
 Sites row phone button | opens | PhoneShareDialog -> PhoneSection -> confirmAction -> set_site_lan
 dispatch::GetWebStatus / StopService / StopWeb / set_domain_enabled | calls | lan::reconcile / lan::stop_all

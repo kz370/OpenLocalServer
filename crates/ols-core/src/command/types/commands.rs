@@ -807,6 +807,11 @@ pub enum CoreCommand {
         hostname: String,
         http: bool,
     },
+    /// Keep a site shared on the network across app restarts.
+    SetSiteLanAlways {
+        hostname: String,
+        always: bool,
+    },
     StartCaShare,
     StopCaShare,
     /// §169: security and end-of-life checks.

@@ -133,7 +133,10 @@ impl Core {
                         // Uses `ensure_web_server_started` so concurrent starts coalesce and
                         // an already-running-and-ready server is a no-op.
                         match i.ensure_web_server_started(&id) {
-                            Ok(_) => i.services.clear_start_failure(&id),
+                            Ok(_) => {
+                                i.services.clear_start_failure(&id);
+                                crate::lan::restore_always(i);
+                            }
                             Err(e) => {
                                 if i.services.is_running_and_ready(&id) {
                                     i.services.clear_start_failure(&id);

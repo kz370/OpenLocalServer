@@ -1451,6 +1451,7 @@ fn guard_raw_command(cmd: CoreCommand) -> Result<CoreCommand, String> {
         C::SetSiteLan { .. }
         | C::GetLanInfo { .. }
         | C::SetSiteLanHttp { .. }
+        | C::SetSiteLanAlways { .. }
         | C::StartCaShare
         | C::StopCaShare => Err(
             "ols_run_command cannot share a site on the network or serve the local certificate:              that opens this computer to other devices, so a person has to do it in OLS (site settings)."

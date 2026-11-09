@@ -155,6 +155,21 @@ export function PhoneSection({ hostname, onChanged, onStopped, bare }: { hostnam
     }
   }
 
+  async function setAlways(always: boolean) {
+    if (always && !(await confirmAction(`Always share ${hostname} on your network? Every time OLS opens, any device on the same Wi-Fi can open it until you turn this off.`, 'Always share', 'Always share', 'amber'))) return
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await runCommand({ type: 'set_site_lan_always', hostname, always })
+      if (r.type === 'lan_info') setInfo(r.info)
+      onChanged?.()
+    } catch (e) {
+      setError(asDiagnostic(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function setHttp(http: boolean) {
     setBusy(true)
     setError(null)
@@ -174,6 +189,15 @@ export function PhoneSection({ hostname, onChanged, onStopped, bare }: { hostnam
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex flex-col gap-2.5">
         {!bare && <SwitchRow checked={info?.on ?? false} disabled={busy || !info} onChange={(v) => void toggle(v)} title="Share this site on my network" hint="Phones on the same Wi-Fi can open it. No internet needed." />}
+        {(!bare || info?.on) && (
+          <SwitchRow
+            checked={info?.always ?? false}
+            disabled={busy || !info}
+            onChange={(v) => void setAlways(v)}
+            title="Always share on my network"
+            hint="Share again by itself whenever OLS is opened and this site's web server is running, even after OLS was fully closed."
+          />
+        )}
         {bare && !info && (
           <p className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
             <Spinner /> Loading…

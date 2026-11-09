@@ -48,6 +48,9 @@ pub struct LanInfo {
     /// The mDNS responder is answering.
     #[serde(default)]
     pub mdns_running: bool,
+    /// "Always share" is on: sharing comes back by itself after OLS is reopened.
+    #[serde(default)]
+    pub always: bool,
 }
 
 /// The ports shared sites get, one each. Clear of the usual dev-server ports (3000, 5173,
@@ -232,6 +235,7 @@ impl Inner {
                 local_url: None,
                 local_qr_svg: None,
                 mdns_running: false,
+                always: d.lan_always,
             };
         };
         let https = can_https && !d.lan_http;
@@ -264,6 +268,7 @@ impl Inner {
             local_qr_svg: local_url.as_deref().map(qr_svg),
             local_url,
             mdns_running,
+            always: d.lan_always,
         }
     }
 
@@ -332,10 +337,28 @@ impl Inner {
             d.lan_ip = None;
             d.lan_port = None;
             d.lan_local = None;
+            // Stopping by hand means stopping: "always" would only switch it back on.
+            d.lan_always = false;
         }
         let saved = self.domains.lock().unwrap().update(d)?;
         self.apply_web(&[])?;
         let _ = self.sync_mdns();
+        Ok(self.lan_info_for(&saved, false))
+    }
+
+    /// Turns "always share" on or off. On saves the choice, then shares the site now when it
+    /// can be shared (otherwise the next web server start or minute tick does it). Off only
+    /// forgets the choice; a running share stays until stopped.
+    pub fn set_site_lan_always(&self, hostname: &str, always: bool) -> Result<LanInfo, CoreError> {
+        let mut d = self.lan_site(hostname, "OLS cannot change that site.")?;
+        d.lan_always = always;
+        let saved = self.domains.lock().unwrap().update(d)?;
+        if always && !saved.lan {
+            if let Err(e) = self.set_site_lan(hostname, true) {
+                tracing::info!(hostname = %hostname, error = %e, "always-share saved; sharing starts when possible");
+            }
+        }
+        let saved = self.lan_site(hostname, "That site does not exist.")?;
         Ok(self.lan_info_for(&saved, false))
     }
 
@@ -476,11 +499,55 @@ pub fn reconcile(inner: &Inner) -> usize {
     stopped
 }
 
+/// Sites that are set to "always share" and should be shared now: not shared yet, turned on,
+/// and their web server is running.
+fn always_candidates(inner: &Inner) -> Vec<String> {
+    let cfg = inner.web_config();
+    inner
+        .domains
+        .lock()
+        .unwrap()
+        .list()
+        .into_iter()
+        .filter(|d| d.lan_always && !d.lan && d.enabled)
+        .filter(|d| {
+            inner
+                .web
+                .is_running_id(&crate::domain::resolved_server(d, &cfg))
+        })
+        .map(|d| d.hostname)
+        .collect()
+}
+
+/// Shares again every "always share" site that is not shared. Sharing is cleared at each
+/// start and exit, so this brings it back once the site's web server is up. Cheap when no
+/// site uses it (one pass over the domain list). Failures (no network yet) are retried by
+/// the next minute tick.
+pub fn restore_always(inner: &Inner) -> usize {
+    let mut restored = 0;
+    for hostname in always_candidates(inner) {
+        match inner.set_site_lan(&hostname, true) {
+            Ok(_) => restored += 1,
+            Err(e) => {
+                tracing::info!(hostname = %hostname, error = %e, "always-share: not restored yet")
+            }
+        }
+    }
+    if restored > 0 {
+        tracing::info!(
+            restored,
+            "sharing on the network restored for always-share sites"
+        );
+    }
+    restored
+}
+
 /// Minute tick: follows a changed LAN address (the certificate then covers the new IP), gives
 /// a port and a `.local` name to a site shared by an earlier build, and keeps the mDNS
 /// responder on the current address (or stops it once nothing is shared).
 pub fn tick(inner: &Inner) {
     reconcile(inner);
+    restore_always(inner);
     let shared: Vec<crate::domain::Domain> = inner
         .domains
         .lock()
@@ -598,7 +665,14 @@ mod tests {
             ..Default::default()
         };
         let mut v = serde_json::to_value(&d).unwrap();
-        for k in ["lan", "lan_ip", "lan_port", "lan_http", "lan_local"] {
+        for k in [
+            "lan",
+            "lan_ip",
+            "lan_port",
+            "lan_http",
+            "lan_local",
+            "lan_always",
+        ] {
             v.as_object_mut().unwrap().remove(k);
         }
         // A site shared by the first 2.12 build still has its sslip.io name; it is ignored.
@@ -609,9 +683,25 @@ mod tests {
         assert!(!back.lan && back.lan_ip.is_none() && back.lan_port.is_none() && !back.lan_http);
         // And a default domain writes none of them.
         let out = serde_json::to_value(&d).unwrap();
-        for k in ["lan_ip", "lan_port", "lan_http", "lan_local"] {
+        for k in ["lan_ip", "lan_port", "lan_http", "lan_local", "lan_always"] {
             assert!(out.get(k).is_none(), "{k}");
         }
+        assert!(!back.lan_always);
+    }
+
+    #[test]
+    fn always_share_round_trips_through_the_saved_file() {
+        let d = crate::domain::Domain {
+            hostname: "keep.test".into(),
+            lan_always: true,
+            ..Default::default()
+        };
+        let back: crate::domain::Domain =
+            serde_json::from_value(serde_json::to_value(&d).unwrap()).unwrap();
+        assert!(
+            back.lan_always,
+            "the flag round-trips through the saved file"
+        );
     }
 
     #[test]

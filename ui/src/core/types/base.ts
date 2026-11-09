@@ -551,6 +551,8 @@ export interface LanInfo {
   local_qr_svg?: string | null
   /** The `.local` responder is answering. */
   mdns_running?: boolean
+  /** "Always share" is on: sharing returns by itself after OLS is reopened. */
+  always?: boolean
 }
 
 /** §179 Sleep when unused, per service. */

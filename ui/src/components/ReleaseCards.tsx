@@ -495,7 +495,7 @@ export function SystemCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle data-toc-label="System" className="flex items-center gap-2">
           <ShieldCheck className="size-4" /> Windows integration, support and privacy
         </CardTitle>
         <CardDescription>OLS sends nothing anywhere: there is no telemetry and no analytics code in this build.</CardDescription>

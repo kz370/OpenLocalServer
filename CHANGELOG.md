@@ -10,24 +10,24 @@ and the project follows [Semantic Versioning](https://semver.org/).
 Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.0.md).
 
 ### Added
-- **Migration guard:** before OLS runs a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI), it saves the project's database. **Rewind** in the toast or in the project's Backups tab puts it back. Turn it off, or set the size limit, in Settings → Databases. Commands typed into the built-in terminal are not covered.
-- **Free up space:** Projects → Free up space finds `node_modules`, `vendor` and build caches in projects you have not used for a while and deletes the ones you pick (they can be rebuilt any time). `olsc project reclaim` does the same from the command line.
-- **PHP upgrade check:** before switching a site to a newer PHP, OLS checks its Composer packages, extensions and every PHP file with the new version, then switches with one click (and back). `olsc php check-upgrade <site> <version>` does the same from the command line.
-- **Bring your sites from Laragon, XAMPP or WampServer:** the import dialog now also lists their sites and adds the ones you pick, with trusted HTTPS. Their files and settings are not changed.
-- **Faster installs on Windows:** Settings → General can exclude your project folders from Windows Defender's real-time scan (with a clear warning, and only folders OLS knows), and explains Dev Drive.
-- **Other antivirus apps:** if your PC uses another antivirus instead of Defender, Settings → General lists the folders to add to that app's exclusions yourself. OLS does not change other antivirus apps.
-- **Clear a site's logs:** the site's Logs view has a Clear button. Web server logs are shared by every site, so OLS warns that clearing one clears it for all sites.
-- **Profiler:** each project's Profiler tab profiles a request with Xdebug and shows where the time went: top functions and a call chart, inside OLS.
-- **Dump viewer:** turn it on in Settings, start it in a project's Dumps tab, and `dump()` / `dd()` output from Laravel and Symfony appears in OLS with clickable file and line, instead of on the page.
-- **Database per Git branch:** turn it on in a project's Git tab, and each branch gets its own copy of the database; switching branches switches `.env` for you.
-- **Pull a server database:** save an SSH profile for staging or production, then pull its database into OLS with fake emails, names, phone numbers and passwords (rules in `.openlocalserver/anonymize.yaml`, which OLS can draft for you). The downloaded file is deleted right after import.
-- **Security checks:** Diagnostics warns when a site uses a PHP, Node, Python or database version that no longer gets security fixes, and each project's new Security tab checks its Composer, npm and pnpm packages for known vulnerabilities.
-- **Open a site on your phone:** click the phone button on the Sites page (or right-click the site), confirm, and scan the QR code on a phone on the same Wi-Fi. The link is your computer's address and a port of the site's own, so no internet is needed. Choose HTTPS (install OLS's certificate once, guided) or plain HTTP. Sites on a `.local` domain can also be opened by name. You can share or stop several sites at once, and sharing always stops by itself when the web server stops, the site is turned off, or OLS quits.
-- **Services sleep when unused:** MariaDB, PostgreSQL, Redis, MongoDB and Memcached can stop after a while without connections and start again when an app connects (Services page → Sleep when unused). Off by default.
+- **Migration guard:** OLS saves a project's database before running a migration. **Rewind** puts it back.
+- **Free up space:** Projects → Free up space deletes old `node_modules`, `vendor` and build caches you pick.
+- **PHP upgrade check:** checks a site's packages and files against a newer PHP before you switch.
+- **Import from Laragon, XAMPP or WampServer:** their sites appear in the import dialog.
+- **Faster installs on Windows:** exclude project folders from Defender, or see what to exclude in another antivirus (Settings → Resources).
+- **Clear a site's logs** from its Logs view.
+- **Profiler:** see where a request spent its time, using Xdebug.
+- **Dump viewer:** `dump()` / `dd()` output from Laravel and Symfony shows inside OLS.
+- **Database per Git branch:** each branch gets its own database copy.
+- **Pull a server database** over SSH, with personal data replaced by fake values.
+- **Security checks:** warnings for unsupported PHP, Node, Python and database versions, and a Security tab that checks project packages for known vulnerabilities.
+- **Open a site on your phone:** scan a QR code on the same Wi-Fi (HTTPS or HTTP).
+- **Services sleep when unused:** MariaDB, PostgreSQL, Redis, MongoDB and Memcached can stop when idle and wake on connection. Off by default.
 
 ### Changed & Improved
-- **More editors found, and a Refresh button:** Settings → Editors now also finds Antigravity, Kiro, VS Code Insiders, Visual Studio, Android Studio, CLion and RubyMine, including editors installed on another drive or in your user folders. Only the real editor is listed, not other programs with the same name. **Refresh** checks again and says what it found.
-- **Hide a security warning:** a warning you do not care about (for example an old PHP version you keep on purpose) can be hidden with its eye button, on the Dashboard Security card or in a project's Security tab. Hidden items are not counted; **N hidden** brings them back. When nothing needs attention, the Dashboard Security card shrinks to one slim row. **View details** on that card (or a click on the critical / high count) opens every problem with its package, affected versions, fix and advisory link. Each problem has a Copy button. Every project has a checkbox, and **Copy selected** or **Export selected** saves the ticked projects as a Markdown report.
+- **Easier Settings:** the sidebar is grouped, related pages share tabs, and there is a search box and an "On this page" bar. Databases and the dump viewer are under Developer tools.
+- **More editors found**, with a Refresh button in Settings → Editors.
+- **Hide a security warning** with its eye button; **View details** shows every problem and can export a report.
 
 ## [2.11.0] — 2026-11-08
 

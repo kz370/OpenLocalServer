@@ -1,6 +1,6 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { Book, Check, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageLayout } from '@/components/PageLayout'
 import { ErrorCard } from '@/components/ErrorCard'
@@ -27,51 +27,22 @@ import { Input } from '@/components/ui/input'
 import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand, requestExit } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import { confirmThen } from '@/lib/confirm'
-import { getDirtyForms, useDirtyForm, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
+import { getDirtyForms, useDirtyForm, useDirtyFormCount, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
 import { useAction } from '@/lib/hooks'
 import { onOpenSettingsSection, takePendingSettingsSection } from '@/lib/nav'
 import { invalidateDefaultTldCache } from '@/lib/sites'
 import { cn } from '@/lib/utils'
-import {
-  SettingsAboutIcon,
-  SettingsAppearanceIcon,
-  SettingsBackupsIcon,
-  SettingsDeletedIcon,
-  SettingsDiagnosticsIcon,
-  SettingsEditorsIcon,
-  SettingsGeneralIcon,
-  SettingsManualIcon,
-  SettingsMcpIcon,
-  SettingsResourcesIcon,
-  SettingsSidebarIcon,
-  SettingsRootsIcon,
-  SettingsSitesIcon,
-  SettingsStartupIcon,
-} from '@/components/layout/SidebarIcons'
+import { SettingsDiagnosticsIcon } from '@/components/layout/SidebarIcons'
 import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
 import { SidebarItemsSettings } from '@/components/settings/SidebarItemsSettings'
+import { NAV_GROUPS, OnThisPage, SECTION_IDS, SectionTabs, SettingsSearch, jumpToSetting, navItemFor, usePageHeadings, type Section } from '@/components/settings/SettingsNav'
 
-type Section = 'general' | 'editors' | 'appearance' | 'sidebar' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
 type SettingsDraft =
   | { section: 'general'; confirmExit: boolean; confirmStopAll: boolean; autoFixDiagnostics: boolean }
   | { section: 'sites'; projectsDir: string; autoDomains: boolean; watchSites: boolean; defaultTld: string; customTld: string }
   | { section: 'startup'; startup: StartupSettings | null }
   | { section: 'mcp'; enabled: boolean; token: string; expiryMode: 'none' | 'hours' | 'at'; ttlHours: number; expiresAt: string }
-const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'general', label: 'General', icon: SettingsGeneralIcon },
-  { id: 'editors', label: 'Editors', icon: SettingsEditorsIcon },
-  { id: 'appearance', label: 'Appearance', icon: SettingsAppearanceIcon },
-  { id: 'sidebar', label: 'Sidebar', icon: SettingsSidebarIcon },
-  { id: 'mcp', label: 'MCP / AI tools', icon: SettingsMcpIcon },
-  { id: 'sites', label: 'Sites & domains', icon: SettingsSitesIcon },
-  { id: 'roots', label: 'Root folders', icon: SettingsRootsIcon },
-  { id: 'deleted', label: 'Hidden sites', icon: SettingsDeletedIcon },
-  { id: 'startup', label: 'Startup & tray', icon: SettingsStartupIcon },
-  { id: 'manual', label: 'User Manual', icon: SettingsManualIcon },
-  { id: 'resources', label: 'Resources', icon: SettingsResourcesIcon },
-  { id: 'backups', label: 'Backups', icon: SettingsBackupsIcon },
-  { id: 'about', label: 'About', icon: SettingsAboutIcon },
-]
+const SECTIONS = SECTION_IDS.map((id) => ({ id }))
 
 async function getString(key: string): Promise<string> {
   const r = await runCommand({ type: 'get_setting', key })
@@ -150,6 +121,29 @@ export function SettingsPage() {
       // ignore
     }
   }, [section])
+
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [jumpTarget, setJumpTarget] = useState<{ title: string; n: number } | null>(null)
+  const dirtyCount = useDirtyFormCount('app')
+  const activeNavItem = navItemFor(section)
+  const pageHeadings = usePageHeadings(contentRef, section)
+  const pickSearchResult = useCallback(async (next: Section, title: string | null) => {
+    await changeSection(next)
+    if (title) setJumpTarget((prev) => ({ title, n: (prev?.n ?? 0) + 1 }))
+  }, [changeSection])
+
+  // After a search pick, the target page may still be rendering: retry briefly until the row exists.
+  useEffect(() => {
+    if (!jumpTarget) return
+    let tries = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const attempt = () => {
+      if (jumpToSetting(contentRef.current, jumpTarget.title) || ++tries > 12) return
+      timer = setTimeout(attempt, 80)
+    }
+    timer = setTimeout(attempt, 60)
+    return () => clearTimeout(timer)
+  }, [jumpTarget])
 
   useEffect(() => {
     const pending = takePendingSettingsSection()
@@ -803,6 +797,17 @@ export function SettingsPage() {
         <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
       </div>
       }
+      toolbar={pageHeadings.length >= 3 ? (
+        // Same columns as the content below (nav rail + page), so the bar lines up with the cards.
+        <div className="@container">
+          <div className="flex flex-row gap-4 @4xl:gap-6">
+            <div aria-hidden className="w-20 shrink-0 @4xl:w-56" />
+            <div className="min-w-0 max-w-3xl flex-1">
+              <OnThisPage root={contentRef} labels={pageHeadings} />
+            </div>
+          </div>
+        </div>
+      ) : undefined}
     >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
@@ -810,32 +815,44 @@ export function SettingsPage() {
       <div className="@container">
       <div className="flex flex-row items-start gap-4 @4xl:gap-6">
         <nav className="sticky top-0 flex w-20 shrink-0 flex-col gap-1 @4xl:w-56 max-h-[calc(100vh-10rem)] ols-scroll-thin overscroll-contain overflow-y-auto overflow-x-hidden pr-1.5" aria-label="Settings sections">
-          {SECTIONS.map((s) => {
-            const isActive = section === s.id
-            return (
-              <button
-                key={s.id}
-                onClick={() => changeSection(s.id)}
-                title={s.label}
-                aria-label={s.label}
-                className={cn(
-                  'group relative flex flex-col items-center gap-1 rounded-xl px-1.5 py-2 text-center text-[11px] font-medium leading-tight transition-all duration-150 @4xl:flex-row @4xl:gap-3 @4xl:px-3.5 @4xl:py-2.5 @4xl:text-left @4xl:text-sm',
-                  isActive
-                    ? 'border border-primary/70 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent text-foreground font-semibold shadow-xs dark:border-primary/80 dark:from-primary/20 dark:via-primary/5 dark:to-transparent dark:text-white dark:shadow-[0_0_15px_var(--ring)]'
-                    : 'border border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground',
-                )}
-              >
-                {isActive && (
-                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-primary shadow-[0_0_8px_var(--primary)]" />
-                )}
-                <s.icon className="size-5 shrink-0 transition-transform duration-150 group-hover:scale-105" />
-                <span className="w-full break-words @4xl:truncate">{s.label}</span>
-              </button>
-            )
-          })}
+          <SettingsSearch onPick={pickSearchResult} />
+          {NAV_GROUPS.map((group, gi) => (
+            <div key={group.label} className="flex flex-col gap-1">
+              {gi > 0 && <div className="mx-2 mt-1 h-px bg-border @4xl:hidden" />}
+              <div className="hidden px-3.5 pb-0.5 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 @4xl:block">{group.label}</div>
+              {group.items.map((item) => {
+                const isActive = activeNavItem === item
+                return (
+                  <button
+                    key={item.label}
+                    onClick={() => changeSection(isActive ? section : item.sections[0].id)}
+                    title={item.label}
+                    aria-label={item.label}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={cn(
+                      'group relative flex flex-col items-center gap-1 rounded-xl px-1.5 py-2 text-center text-[11px] font-medium leading-tight transition-all duration-150 @4xl:flex-row @4xl:gap-3 @4xl:px-3.5 @4xl:py-2 @4xl:text-left @4xl:text-sm',
+                      isActive
+                        ? 'border border-primary/70 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent text-foreground font-semibold shadow-xs dark:border-primary/80 dark:from-primary/20 dark:via-primary/5 dark:to-transparent dark:text-white dark:shadow-[0_0_15px_var(--ring)]'
+                        : 'border border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+                    )}
+                  >
+                    {isActive && (
+                      <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-primary shadow-[0_0_8px_var(--primary)]" />
+                    )}
+                    <item.icon className="size-5 shrink-0 transition-transform duration-150 group-hover:scale-105" />
+                    <span className="w-full break-words @4xl:truncate">{item.label}</span>
+                    {isActive && dirtyCount > 0 && (
+                      <span className="absolute right-2 top-2 size-2 rounded-full bg-amber-500" title="Unsaved changes" aria-label="Unsaved changes" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
         </nav>
 
-        <div className="flex min-w-0 max-w-3xl flex-1 flex-col gap-5">
+        <div ref={contentRef} className="flex min-w-0 max-w-3xl flex-1 flex-col gap-5">
+          {activeNavItem && <SectionTabs item={activeNavItem} section={section} onChange={changeSection} />}
           {section === 'appearance' && <AppearanceSettings />}
           {section === 'sidebar' && <SidebarItemsSettings />}
 
@@ -886,6 +903,13 @@ export function SettingsPage() {
                   />
                 </CardContent>
               </Card>
+              <ApiCard />
+              <SystemCard />
+            </>
+          )}
+
+          {section === 'developer' && (
+            <>
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm">Databases</CardTitle>
@@ -904,9 +928,6 @@ export function SettingsPage() {
                   <DumpViewerSettings />
                 </CardContent>
               </Card>
-              <PerformanceSettings />
-              <ApiCard />
-              <SystemCard />
             </>
           )}
 
@@ -1138,7 +1159,12 @@ export function SettingsPage() {
               </CardContent>
             </Card>
           )}
-          {section === 'resources' && <ResourcesCard />}
+          {section === 'resources' && (
+            <>
+              <ResourcesCard />
+              <PerformanceSettings />
+            </>
+          )}
           {section === 'backups' && (
             <>
               <AutoBackupCard />
