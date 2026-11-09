@@ -18,26 +18,6 @@ interface Status {
   otherAv: string[]
 }
 
-/**
- * Where exclusions usually live in common antivirus apps. OLS cannot change these apps, and
- * menus move between versions, so this is a hint, matched on the product name.
- */
-const AV_HINTS: [RegExp, string][] = [
-  [/bitdefender/i, 'Protection → Antivirus → Open → Settings → Manage exceptions → Add an exception.'],
-  [/avast|avg/i, 'Menu → Settings → General → Exceptions → Add exception.'],
-  [/kaspersky/i, 'Settings → Security settings → Threats and exclusions → Manage exclusions → Add.'],
-  [/eset/i, 'Setup → Advanced setup → Detection engine → Exclusions → Performance exclusions → Edit → Add.'],
-  [/norton/i, 'Settings → Antivirus → Scans and Risks → Items to Exclude from Scans → Configure → Add folders.'],
-  [/mcafee/i, 'My Protection → Real-Time Scanning → Excluded files → Add file / folder.'],
-  [/malwarebytes/i, 'Settings → Allow List → Add → Allow a file or folder.'],
-  [/sophos/i, 'Settings (admin) → Global exclusions → Add exclusion → File or folder.'],
-  [/trend micro/i, 'Settings → Exception Lists → Programs/folders → Add.'],
-]
-
-function avHint(name: string): string {
-  return AV_HINTS.find(([re]) => re.test(name))?.[1] ?? 'Open the antivirus app and look for Exclusions, Exceptions or Allow list in its settings.'
-}
-
 const DEV_DRIVE_DOCS = 'https://learn.microsoft.com/windows/dev-drive/'
 
 /**
@@ -114,7 +94,7 @@ export function PerformanceSettings() {
             <Spinner className="size-4" /> Asking Windows Defender…
           </p>
         ) : status.otherAv.length > 0 && !(status.state.available && status.state.realtime_on) ? (
-          <OtherAntivirus names={status.otherAv} folders={status.suggestions} />
+          <OtherAntivirus folders={status.suggestions} />
         ) : !status.state.available ? (
           <p className="text-muted-foreground">Defender is not active or is managed by your organization. Nothing to do here.</p>
         ) : (
@@ -176,14 +156,15 @@ export function PerformanceSettings() {
 }
 
 /**
- * Another antivirus is doing the scanning (Bitdefender, Avast, ...). OLS cannot change its
- * settings, so it lists the folders and where the exclusions usually are; the user adds them.
+ * Another antivirus is doing the scanning instead of Defender. OLS cannot change its settings,
+ * so it lists the folders for the user to add to that app's exclusions. Product names are not
+ * shown on purpose.
  */
-function OtherAntivirus({ names, folders }: { names: string[]; folders: string[] }) {
+function OtherAntivirus({ folders }: { folders: string[] }) {
   return (
     <div className="flex flex-col gap-3">
       <p>
-        Your antivirus is <strong>{names.join(', ')}</strong>, not Windows Defender. OLS cannot change its settings, but you can add the folders below to its exclusions yourself.
+        Your PC uses another antivirus app instead of Windows Defender. OLS cannot change its settings. To make installs faster, open your antivirus app and add the folders below to its exclusions (sometimes called Exceptions or Allow list).
       </p>
       <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
@@ -191,11 +172,6 @@ function OtherAntivirus({ names, folders }: { names: string[]; folders: string[]
           <strong>Security trade-off.</strong> Excluded folders are not scanned in real time, so malware downloaded into them (for example a malicious npm package) is not caught there. Only exclude folders with code you trust.
         </p>
       </div>
-      {names.map((n) => (
-        <p key={n} className="text-xs text-muted-foreground">
-          <strong className="text-foreground">{n}:</strong> usually {avHint(n)} Menus differ between versions.
-        </p>
-      ))}
       <div className="flex flex-col divide-y rounded-md border">
         {folders.length === 0 && <p className="p-3 text-muted-foreground">No folders to suggest yet.</p>}
         {folders.map((p) => (

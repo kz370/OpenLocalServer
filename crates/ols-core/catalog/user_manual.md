@@ -423,7 +423,7 @@ olsc guide
 ### Faster installs on Windows (Settings → Performance)
 Windows Defender scans every file that `npm install` and `composer install` write, which makes them slower. **Settings → Performance** lists the folders OLS manages (your project root folders, the sites folder and OLS's data folder) and lets you exclude them from Defender's real-time scan, one at a time, and remove the exclusion again. **Warning:** Defender does not scan excluded folders in real time, so malware downloaded into one (for example a malicious npm package) is not caught there. Only exclude folders with code you trust. OLS never excludes anything without asking, only adds folders from that list, and only removes exclusions it added. Windows asks for administrator permission once if the OLS helper service is not installed. The card also tells you whether a drive is ReFS (a **Dev Drive**, which Windows scans in a lighter way); OLS never creates or formats drives.
 
-**Another antivirus (Bitdefender, Avast, Kaspersky, ...)?** When Windows reports another antivirus and Defender's real-time scan is off, the card names it and lists the same folders with **Copy** buttons, plus where exclusions usually are in that app. Add them there yourself; OLS cannot change another antivirus. The same warning applies.
+**Another antivirus?** When Windows reports another antivirus and Defender's real-time scan is off, the card lists the same folders with **Copy** buttons. Open your antivirus app and add them to its exclusions (sometimes called Exceptions or Allow list); OLS cannot change another antivirus. The same warning applies.
 
 ---
 
@@ -435,7 +435,7 @@ Windows Defender scans every file that `npm install` and `composer install` writ
 - **PHP upgrade check:** before switching a site to a newer PHP, OLS checks its Composer packages, extensions and every PHP file with the new version, then switches with one click (and back). `olsc php check-upgrade <site> <version>` does the same from the command line.
 - **Bring your sites from Laragon, XAMPP or WampServer:** the import dialog now also lists their sites and adds the ones you pick, with trusted HTTPS. Their files and settings are not changed.
 - **Faster installs on Windows:** Settings → Performance can exclude your project folders from Windows Defender's real-time scan (with a clear warning, and only folders OLS knows), and explains Dev Drive.
-- **Other antivirus apps:** if your PC uses Bitdefender, Avast, Kaspersky or another antivirus instead of Defender, Settings → Performance names it, lists the folders to exclude and says where that setting usually is. OLS does not change other antivirus apps.
+- **Other antivirus apps:** if your PC uses another antivirus instead of Defender, Settings → Performance lists the folders to add to that app's exclusions yourself. OLS does not change other antivirus apps.
 - **Clear a site's logs:** the site's Logs view has a Clear button. Web server logs are shared by every site, so OLS warns that clearing one clears it for all sites.
 - **Profiler:** each project's Profiler tab profiles a request with Xdebug and shows where the time went: top functions and a call chart, inside OLS.
 - **Dump viewer:** turn it on in Settings, start it in a project's Dumps tab, and `dump()` / `dd()` output from Laravel and Symfony appears in OLS with clickable file and line, instead of on the page.
