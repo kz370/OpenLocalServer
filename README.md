@@ -54,6 +54,7 @@ It is actively developed, so feedback, suggestions, and bug reports are very wel
   - [Daily CLI Commands](#daily-cli-commands)
   - [AI Integration with MCP](#ai-integration-with-mcp)
   - [Typical Flow in GUI](#typical-flow-in-gui)
+  - [Open a Site on Your Phone](#open-a-site-on-your-phone)
 - [Troubleshooting & Manual Runtimes](#-troubleshooting--manual-runtimes)
 - [Project Structure](#-project-structure)
 - [Built for AI, Built to be Forked](#-built-for-ai-built-to-be-forked)
@@ -226,7 +227,7 @@ Grab the latest installer (`OLS-2.12.0-setup.exe`) from the [Releases page](http
 - **Migration guard:** before a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI) OLS saves the project's database; **Rewind** puts it back. `olsc db guard list|rewind`, MCP `ols_list_migration_snapshots`.
 - **Database per Git branch:** each branch gets its own copy of the database; switching branches switches `.env` (project Git tab, or `olsc db branch`).
 - **Pull a server database:** copy staging or production over SSH with fake emails, names, phones and passwords (project Backups tab, or `olsc db pull`).
-- **Open a site on your phone:** scan a QR code on the same Wi-Fi and install OLS's certificate once (guided) for working HTTPS (site settings, Open on my phone).
+- **Open a site on your phone:** scan a QR code on the same Wi-Fi and install OLS's certificate once (guided) for working HTTPS (site settings, Open on my phone). See [Open a Site on Your Phone](#open-a-site-on-your-phone).
 - **Services sleep when unused:** MariaDB, PostgreSQL, Redis, MongoDB and Memcached stop after a while without connections and start again when an app connects (Services page, off by default).
 - **Import sites from Laragon, XAMPP and WampServer:** the import dialog lists their sites and adds the ones you pick, with trusted HTTPS; the old tools are not changed.
 
@@ -435,6 +436,56 @@ Once connected, you can ask your AI assistant natural questions:
 3. **Open Site:** Click the domain link to open `https://myapp.test` with trusted local SSL.
 4. **Develop:** Use the built-in `.env` editor, run commands from the Quick Commands panel, and view outgoing emails in Mailpit.
 5. **Share:** Start a public tunnel with explicit confirmation and monitor requests in the real-time Traffic Inspector.
+
+### Open a Site on Your Phone
+
+Test a site on a real phone, with working HTTPS, over your own Wi-Fi.
+
+**How it works**
+
+- A phone cannot use OLS's local DNS or your PC's hosts file, so `shop.test` means nothing to it.
+- When you turn it on for a site, OLS gives the site a second name such as `shop-test.192-168-1-5.sslip.io`. [sslip.io](https://sslip.io) is a free public DNS service that answers that name with the IP inside it (`192.168.1.5`, your PC on the Wi-Fi).
+- The QR code holds that address. The site's certificate covers the name only while phone access is on.
+
+**What needs internet**
+
+| Step | Internet needed? |
+| --- | --- |
+| Making the link and QR code | No, it is built on your PC |
+| Downloading the certificate | No, the phone gets it from your PC over Wi-Fi |
+| Opening the site | Yes, a little: the phone looks the name up through sslip.io. The page itself still loads from your PC |
+
+> **Site does not open on the phone?** Check that the phone and the PC are on the same Wi-Fi and the phone has internet. Some routers block DNS answers that point to home addresses (`192.168.x.x`), often called *DNS rebinding protection*; allow `sslip.io` there, or turn it off for testing.
+
+**Steps**
+
+1. Put the phone on the same Wi-Fi as the PC.
+2. In OLS, open the site's settings, find **Open on my phone** and turn on **Share this site on my network**.
+3. Scan the site's QR code with the phone.
+4. Install OLS's certificate once (below), then open the site again: it shows a lock with no warning.
+
+**Install the certificate on Android**
+
+1. In the same section click **Install certificate on phone…**, scan that QR code, and tap **Android: download the certificate** (`ols-ca.crt`). The page runs only while the dialog is open.
+2. If you tap the file, Android says *"This certificate from null must be installed in Settings"*. **That is normal.** "null" is the app Android thinks sent the file, not the certificate. Tap **OK**; the file stays in Downloads.
+3. Open **Settings → Security → More security settings → Encryption & credentials → Install a certificate → CA certificate**. Menus differ by phone; searching Settings for "CA certificate" is fastest.
+4. Accept the warning and pick `ols-ca.crt`.
+5. Check it under **Encryption & credentials → Trusted credentials → User**: *OpenLocalServer Local CA* is listed.
+
+Since Android 11, a CA certificate can only be installed from Settings. No app can install it for you.
+
+**Install the certificate on iPhone / iPad**
+
+1. Click **Install certificate on phone…**, open the page **in Safari** and tap **iPhone / iPad: download the profile**.
+2. **Settings → Profile Downloaded → Install**. iOS says "Not verified"; that is expected.
+3. **Settings → General → About → Certificate Trust Settings** → turn on *OpenLocalServer Local CA*.
+
+**When you are done testing**
+
+- Turn **Share this site on my network** off for the site.
+- Remove the certificate: Android **Trusted credentials → User → OpenLocalServer Local CA → Remove**; iPhone **Settings → General → VPN & Device Management → the profile → Remove Profile**.
+
+> **Warning:** Only install the certificate on a phone you own. A trusted CA can vouch for any website on that phone, so remove it when you no longer need it.
 
 ---
 
