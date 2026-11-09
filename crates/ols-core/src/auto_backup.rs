@@ -452,7 +452,7 @@ fn pick_database(
     let Some(existing) = existing else {
         return Ok(declared);
     };
-    if existing.iter().any(|d| *d == declared) {
+    if existing.contains(&declared) {
         return Ok(declared);
     }
     if let Some(name) = configured.filter(|n| existing.iter().any(|d| d == n)) {
