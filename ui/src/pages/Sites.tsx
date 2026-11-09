@@ -744,7 +744,15 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
   }
   // The row's phone button asks first: sharing opens the site to every device on the Wi-Fi.
+  // Why a site cannot be shared right now, or null. Stopping is always allowed.
+  const shareBlocked = (d: DomainSummary): string | null =>
+    d.lan ? null : !d.enabled ? 'Turn the site on first: a disabled site is not served.' : !status?.running ? 'Start the web server first.' : null
   async function togglePhoneShare(d: DomainSummary, projectId: string | null) {
+    const blocked = shareBlocked(d)
+    if (blocked) {
+      notify.warning(blocked)
+      return
+    }
     const ok = d.lan
       ? await confirmAction(`Stop sharing ${d.hostname} on your network? Phones on your Wi-Fi can no longer open it.`, 'Stop sharing', 'Stop sharing')
       : await confirmAction(
@@ -870,7 +878,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       items.push(
         d.lan
           ? { label: 'Stop sharing on my network', icon: <Smartphone />, hint: 'Your phone can no longer open this site', onSelect: () => stopSharingOnNetwork(d) }
-          : { label: 'Share this site on my network', icon: <Smartphone />, hint: 'Open it on a phone on the same Wi-Fi (QR code)', onSelect: () => shareOnNetwork(d, p?.id ?? null) },
+          : { label: 'Share this site on my network', icon: <Smartphone />, hint: shareBlocked(d) ?? 'Open it on a phone on the same Wi-Fi (QR code)', disabled: !!shareBlocked(d), onSelect: () => shareOnNetwork(d, p?.id ?? null) },
       )
       items.push({
         label: 'Export to bundle…',
@@ -1604,7 +1612,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             className={`h-8 w-8 cursor-pointer px-0 ${d.lan ? 'text-emerald-500 hover:text-emerald-600' : 'text-muted-foreground/60 hover:text-foreground'}`}
                             disabled={busy === `lan:${d.hostname}`}
                             onClick={() => void togglePhoneShare(d, p?.id ?? null)}
-                            title={d.lan ? 'Shared on your network: click to stop sharing' : 'Share on my network (open it on a phone)'}
+                            title={d.lan ? 'Shared on your network: click to stop sharing' : (shareBlocked(d) ?? 'Share on my network (open it on a phone)')}
                             aria-label={d.lan ? `Stop sharing ${d.hostname} on your network` : `Share ${d.hostname} on your network`}
                             aria-pressed={d.lan ?? false}
                           >

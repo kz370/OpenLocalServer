@@ -282,6 +282,25 @@ impl Inner {
     pub fn set_site_lan(&self, hostname: &str, on: bool) -> Result<LanInfo, CoreError> {
         let mut d = self.lan_site(hostname, "OLS cannot share that site.")?;
         if on {
+            // A phone can only reach a site the web server is serving right now: a disabled
+            // site has no virtual host and a stopped server has no listener.
+            if !d.enabled {
+                return Err(CoreError::failed_fix(
+                    "OLS cannot share a site that is turned off.",
+                    format!("{hostname} is disabled, so the web server does not serve it."),
+                    "Turn the site on in the Sites page, then share it.",
+                ));
+            }
+            if !self
+                .web
+                .is_running_id(&crate::domain::resolved_server(&d, &self.web_config()))
+            {
+                return Err(CoreError::failed_fix(
+                    "OLS cannot share a site while its web server is stopped.",
+                    format!("The web server that serves {hostname} is not running, so a phone has nothing to connect to."),
+                    "Start the web server from the Sites page (Start), then share the site.",
+                ));
+            }
             let ip = lan_ipv4().ok_or_else(|| {
                 CoreError::failed_fix(
                     "This computer is not on a private network (Wi-Fi or Ethernet).",
