@@ -55,7 +55,7 @@ echo     Fix: run scripts\run-checks.bat -help to see them.
 echo.
 exit /b 2
 :nextarg
-shift
+shift /1
 goto :args
 
 :help
