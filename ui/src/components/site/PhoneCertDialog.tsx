@@ -1,4 +1,6 @@
-import { Copy, Smartphone } from 'lucide-react'
+import { Copy } from 'lucide-react'
+
+import { PhoneShareIcon } from '@/components/PhoneShareIcon'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -211,7 +213,7 @@ export function PhoneSection({ hostname }: { hostname: string }) {
             )}
             {info.https && (
               <Button size="sm" variant="secondary" className="h-7 w-fit px-2 text-xs" onClick={() => setCertOpen(true)}>
-                <Smartphone className="size-3.5" /> Install certificate on phone…
+                <PhoneShareIcon className="size-3.5" /> Install certificate on phone…
               </Button>
             )}
           </div>

@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, Smartphone, SquareTerminal, Trash2, UserRound, Wrench, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, UserRound, Wrench, X, Zap } from 'lucide-react'
 import { useEffect, useState, Fragment } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -17,6 +17,7 @@ import { DriftDialog } from '@/components/site/WebApply'
 import { PageLayout } from '@/components/PageLayout'
 import { RootFolderControls, RootGroupRow } from '@/components/RootFolderControls'
 import { ScrollableList } from '@/components/ScrollableList'
+import { PhoneShareIcon } from '@/components/PhoneShareIcon'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { TechIcon } from '@/components/TechIcon'
@@ -877,8 +878,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       // Domains tab, where the QR code and the certificate helper are.
       items.push(
         d.lan
-          ? { label: 'Stop sharing on my network', icon: <Smartphone />, hint: 'Your phone can no longer open this site', onSelect: () => stopSharingOnNetwork(d) }
-          : { label: 'Share this site on my network', icon: <Smartphone />, hint: shareBlocked(d) ?? 'Open it on a phone on the same Wi-Fi (QR code)', disabled: !!shareBlocked(d), onSelect: () => shareOnNetwork(d, p?.id ?? null) },
+          ? { label: 'Stop sharing on my network', icon: <PhoneShareIcon />, hint: 'Your phone can no longer open this site', onSelect: () => stopSharingOnNetwork(d) }
+          : { label: 'Share this site on my network', icon: <PhoneShareIcon />, hint: shareBlocked(d) ?? 'Open it on a phone on the same Wi-Fi (QR code)', disabled: !!shareBlocked(d), onSelect: () => shareOnNetwork(d, p?.id ?? null) },
       )
       items.push({
         label: 'Export to bundle…',
@@ -1140,7 +1141,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 { id: 'missing', label: 'Folder not found', badge: matches.filter(isRowMissingFolder).length, icon: <FolderX className="size-3.5 text-destructive" /> },
                 // Counter of sites phones can open; the tab only shows while one is shared.
                 ...(sharedCount > 0 || activeFilter === 'shared'
-                  ? [{ id: 'shared' as SiteFilter, label: 'On your network', badge: sharedCount, icon: <Smartphone className="size-3.5 text-emerald-500" /> }]
+                  ? [{ id: 'shared' as SiteFilter, label: 'On your network', badge: sharedCount, icon: <PhoneShareIcon className="size-3.5 text-emerald-500" /> }]
                   : []),
                 ...groupsPresent.map((g) => ({
                   id: g.id as SiteFilter,
@@ -1442,7 +1443,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                               )}
                               {d?.lan && (
                                 <span title="Shared on your network (Open on my phone)" aria-label="Shared on your network">
-                                  <Smartphone className="size-3 text-emerald-500" />
+                                  <PhoneShareIcon className="size-3 text-emerald-500" />
                                 </span>
                               )}
                               {d?.ddns_provider && (
@@ -1563,7 +1564,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           title="Shared on your network. Open the QR code and settings."
                           onClick={() => showPhoneSection(d, p?.id ?? null)}
                         >
-                          <Smartphone className="size-3" /> On your network
+                          <PhoneShareIcon className="size-3" /> On your network
                         </button>
                       )}
                       {d?.ddns_provider && (
@@ -1609,14 +1610,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className={`h-8 w-8 cursor-pointer px-0 ${d.lan ? 'text-emerald-500 hover:text-emerald-600' : 'text-muted-foreground/60 hover:text-foreground'}`}
-                            disabled={busy === `lan:${d.hostname}`}
+                            className={`h-8 w-8 px-0 ${d.lan ? 'cursor-pointer text-emerald-500 hover:text-emerald-600' : 'cursor-pointer text-muted-foreground/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40'}`}
+                            disabled={busy === `lan:${d.hostname}` || !!shareBlocked(d)}
                             onClick={() => void togglePhoneShare(d, p?.id ?? null)}
                             title={d.lan ? 'Shared on your network: click to stop sharing' : (shareBlocked(d) ?? 'Share on my network (open it on a phone)')}
                             aria-label={d.lan ? `Stop sharing ${d.hostname} on your network` : `Share ${d.hostname} on your network`}
                             aria-pressed={d.lan ?? false}
                           >
-                            {busy === `lan:${d.hostname}` ? <Spinner /> : <Smartphone className="size-3.5" />}
+                            {busy === `lan:${d.hostname}` ? <Spinner /> : <PhoneShareIcon className="size-3.5" />}
                           </Button>
                         )}
                         <Button size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" onClick={openSettings} title="Settings" aria-label={`Settings for ${d?.hostname ?? p?.name}`}>
