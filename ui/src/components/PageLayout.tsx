@@ -44,7 +44,7 @@ export function PageLayout({ header, toolbar, footer, mode = 'scroll', resetKey,
         className={cn(
           'min-h-0 flex-1',
           MIN_CONTENT,
-          mode === 'scroll' && 'ols-scroll',
+          mode === 'scroll' && 'ols-scroll pr-2.5',
           mode === 'list' && 'flex flex-col',
           mode === 'fill' && 'flex flex-col overflow-hidden',
           contentClassName,

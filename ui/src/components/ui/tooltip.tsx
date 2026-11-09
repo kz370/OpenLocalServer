@@ -209,6 +209,43 @@ export function GlobalTooltipHost() {
     setText(null)
   }, [open])
 
+  // Safety net: no native title tooltip may ever reach the screen. Migrate every `title`
+  // (existing and added/changed later by React) to `data-tooltip` before the browser's
+  // ~500ms native tooltip delay, regardless of hover order, ancestors or re-renders.
+  React.useEffect(() => {
+    function migrate(el: Element) {
+      const raw = el.getAttribute('title')
+      if (raw === null) return
+      el.removeAttribute('title')
+      const t = raw.trim()
+      if (!t) return
+      if (!el.hasAttribute('data-no-tooltip') && !el.hasAttribute('data-tooltip')) {
+        el.setAttribute('data-tooltip', t)
+      }
+      if (!el.hasAttribute('aria-label') && !el.hasAttribute('data-no-tooltip')) {
+        el.setAttribute('aria-label', t)
+      }
+    }
+    function sweep(root: ParentNode) {
+      if (root instanceof Element) migrate(root)
+      root.querySelectorAll('[title]').forEach(migrate)
+    }
+    sweep(document)
+    const observer = new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.type === 'attributes') migrate(r.target as Element)
+        else r.addedNodes.forEach((n) => n instanceof Element && sweep(n))
+      }
+    })
+    observer.observe(document.documentElement, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['title'],
+    })
+    return () => observer.disconnect()
+  }, [])
+
   React.useEffect(() => {
     function handlePointerOver(e: PointerEvent) {
       const target = e.target as HTMLElement | null

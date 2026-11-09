@@ -262,8 +262,17 @@ export function DiagnosticsCard({
       <div className="h-10 min-h-[40px] max-h-[44px] flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/60 px-3.5 shadow-xs transition-colors w-full min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <CheckCircle2 className="size-4 shrink-0 text-success" />
-          <span className="text-xs font-medium text-foreground">No problems found</span>
-          <span className="hidden text-xs text-muted-foreground sm:inline truncate">
+          <span className="text-xs font-medium text-foreground whitespace-nowrap shrink-0">No problems found</span>
+          <span className="hidden text-xs text-muted-foreground sm:block truncate min-w-0"
+            // The app's global tooltip (ui/tooltip.tsx) reads data-tooltip; only set it when clipped.
+            onPointerOver={(e) => {
+              const el = e.currentTarget
+              if (el.scrollWidth > el.clientWidth) {
+                el.setAttribute('data-tooltip', `Checked ${formatCheckedRelative(lastChecked, now)} · All services and directories are operational`)
+              } else {
+                el.removeAttribute('data-tooltip')
+              }
+            }}>
             {busy === 'scan'
               ? '· Checking diagnostics…'
               : `· Checked ${formatCheckedRelative(lastChecked, now)} · All services and directories are operational`}
