@@ -117,7 +117,7 @@ function PhoneWrap({ bare, children }: { bare?: boolean; children: React.ReactNo
 }
 
 /** Site settings section: a LAN address and QR for the site, and the certificate helper. */
-export function PhoneSection({ hostname, onChanged, bare }: { hostname: string; onChanged?: () => void; bare?: boolean }) {
+export function PhoneSection({ hostname, onChanged, onStopped, bare }: { hostname: string; onChanged?: () => void; onStopped?: () => void; bare?: boolean }) {
   const [info, setInfo] = useState<LanInfo | null>(null)
   const [busy, setBusy] = useState(false)
   const [certOpen, setCertOpen] = useState(false)
@@ -147,6 +147,7 @@ export function PhoneSection({ hostname, onChanged, bare }: { hostname: string; 
       const r = await runCommand({ type: 'set_site_lan', hostname, on })
       if (r.type === 'lan_info') setInfo(r.info)
       onChanged?.()
+      if (!on && r.type === 'lan_info') onStopped?.()
     } catch (e) {
       setError(asDiagnostic(e))
     } finally {
@@ -172,7 +173,13 @@ export function PhoneSection({ hostname, onChanged, bare }: { hostname: string; 
     <PhoneWrap bare={bare}>
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex flex-col gap-2.5">
-        <SwitchRow checked={info?.on ?? false} disabled={busy || !info} onChange={(v) => void toggle(v)} title="Share this site on my network" hint="Phones on the same Wi-Fi can open it. No internet needed." />
+        {!bare && <SwitchRow checked={info?.on ?? false} disabled={busy || !info} onChange={(v) => void toggle(v)} title="Share this site on my network" hint="Phones on the same Wi-Fi can open it. No internet needed." />}
+        {bare && !info && (
+          <p className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Loading…
+          </p>
+        )}
+        {bare && info && !info.on && <p className="py-6 text-center text-sm text-muted-foreground">This site is not shared on your network. Use the phone button on the Sites page to share it.</p>}
         {info?.on && (
           <SwitchRow
             checked={info.https ?? false}
@@ -216,6 +223,11 @@ export function PhoneSection({ hostname, onChanged, bare }: { hostname: string; 
             )}
           </div>
         )}
+        {bare && info?.on && (
+          <Button size="sm" variant="outline" className="h-8 w-fit" disabled={busy} onClick={() => void toggle(false)}>
+            <PhoneShareIcon className="size-4" /> Stop sharing
+          </Button>
+        )}
         {info?.warnings.map((w) => (
           <p key={w} className="text-xs text-warning">
             {w}
@@ -241,7 +253,7 @@ export function PhoneSection({ hostname, onChanged, bare }: { hostname: string; 
 export function PhoneShareDialog({ hostname, onClose, onChanged }: { hostname: string | null; onClose: () => void; onChanged?: () => void }) {
   return (
     <Dialog open={hostname !== null} onClose={onClose} title="Share on my network" description={hostname ?? undefined} size="default">
-      {hostname && <PhoneSection key={hostname} hostname={hostname} onChanged={onChanged} bare />}
+      {hostname && <PhoneSection key={hostname} hostname={hostname} onChanged={onChanged} onStopped={onClose} bare />}
     </Dialog>
   )
 }
