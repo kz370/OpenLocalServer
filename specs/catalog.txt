@@ -333,12 +333,14 @@ eol (crates/ols-core/src/eol.rs) | §169 End-of-life: `EolStatus`, `EolItem`, `s
 audit (crates/ols-core/src/audit.rs) | §169 Package audit: `AuditResult`, `AuditTool`, `AuditFinding`, `parse_composer`, `parse_npm`, `parse_pnpm`, `parse_pip_audit`, `audit_project`, `run_task`, `list_results`.
 SecurityPanel / SecuritySummaryCard (ui/src/components/project/SecurityPanel.tsx) | Security tool tab (`security` in projectToolTabs.ts, after `repair`) and the Dashboard Security card.
 olsc project audit / runtime eol (crates/ols-cli/src/commands/db.rs) | Package audit and end-of-life from the command line.
-lan (crates/ols-core/src/lan.rs) | §178 LAN port per site: `LanInfo{on, ip, url, qr_svg, warnings, port, https, can_https}`, `LAN_PORTS` (8700-8999), `lan_ipv4`, `pick_port`, `lan_url`, `qr_svg`, `Inner::set_site_lan`, `set_site_lan_http`, `get_lan_info`, `tick`.
+lan (crates/ols-core/src/lan.rs) | §178 LAN port per site: `LanInfo{on, ip, url, qr_svg, warnings, port, https, can_https, local_name, local_url, local_qr_svg, mdns_running}`, `Inner::sync_mdns`, `LAN_PORTS` (8700-8999), `lan_ipv4`, `pick_port`, `lan_url`, `qr_svg`, `Inner::set_site_lan`, `set_site_lan_http`, `get_lan_info`, `tick`.
 lan_share (crates/ols-core/src/lan_share.rs) | §178 Temporary certificate page: `Share`, `start`, `pem_to_der`, `mobileconfig`, `Inner::start_ca_share`, `stop_ca_share`.
 PhoneSection / PhoneCertDialog (ui/src/components/site/PhoneCertDialog.tsx) | Open on my phone section of the site's domains tab (share switch, Use HTTPS switch, IP:port QR, scrolls into view once after `focusPhoneSection`) and the certificate dialog.
-phoneFocus (ui/src/lib/phoneFocus.ts) | `focusPhoneSection(hostname)` / `takePhoneFocus(hostname)`: one-shot request from the Sites right-click menu to scroll the site's Open on my phone section into view.
+phoneFocus (ui/src/lib/phoneFocus.ts) | `focusPhoneSection(hostname)` / `wantsPhoneFocus(hostname)` / `clearPhoneFocus(hostname)`: request from the Sites right-click menu to scroll the site's Open on my phone section into view.
 idle (crates/ols-core/src/idle.rs) | §179 Sleep when unused: `IdleConfig`, `IdleSettings`, `established_on_ports`, `should_sleep`, `IdleState`, `load`, `save`, `tick`. Setting `services.idle`.
 Services page (ui/src/pages/Services.tsx) | Sleep when unused popover and Sleeping badge.
 web::LanListen (crates/ols-core/src/web/mod.rs) | §178 `{port, https}`: the extra per-site listener for phones; `SiteSpec.lan`, `SiteSpec::lan_plain()`.
 SiteLogs Clear (ui/src/components/site/SiteLogs.tsx) | Clear button: `clear_log{source}` after a confirmation that warns web server logs are shared by every site.
 defender::parse_antivirus / query_other_antivirus (crates/ols-core/src/defender.rs) | Other antivirus names from Windows Security Center, Defender left out; `DefenderStatus.other_antivirus`.
+mdns (crates/ols-core/src/mdns.rs) | §178 `.local` names over mDNS: `MDNS_GROUP`, `MDNS_PORT`, `is_local_name`, `answer`, `Dest`, `announcement`, `Responder` (socket2, address reuse, goodbye on drop).
+Sites phone button (ui/src/pages/Sites.tsx) | `shareOnNetwork`, `stopSharingOnNetwork`, `togglePhoneShare` (confirmation), `showPhoneSection`: row phone button, compact chip, "On your network" status link; `isRowShared` and the `shared` filter tab ("On your network" with a count, shown while a site is shared).

@@ -8,7 +8,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { FormSection, SwitchRow } from '@/components/ui/form'
 import { type Diagnostic, type LanInfo, runCommand } from '@/core'
 import { asDiagnostic } from '@/lib/diagnostic'
-import { takePhoneFocus } from '@/lib/phoneFocus'
+import { clearPhoneFocus, wantsPhoneFocus } from '@/lib/phoneFocus'
 
 /** An SVG string from the core as an image. Never injected as HTML. */
 function Qr({ svg, label }: { svg: string; label: string }) {
@@ -92,6 +92,21 @@ export function PhoneCertDialog({ open, onClose }: { open: boolean; onClose: () 
   )
 }
 
+/** One phone link: a QR code, the address and a copy button. */
+function LinkCard({ title, hint, url, qr }: { title: string; hint: string; url: string; qr: string | null }) {
+  return (
+    <div className="flex min-w-0 flex-1 basis-64 flex-col items-start gap-2 rounded-md border border-border p-3">
+      <p className="text-xs font-medium">{title}</p>
+      {qr && <Qr svg={qr} label={`QR code for ${url}`} />}
+      <p className="break-all font-mono text-xs">{url}</p>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => void navigator.clipboard.writeText(url)}>
+        <Copy className="size-3.5" /> Copy address
+      </Button>
+    </div>
+  )
+}
+
 /** Site settings section: a LAN address and QR for the site, and the certificate helper. */
 export function PhoneSection({ hostname }: { hostname: string }) {
   const [info, setInfo] = useState<LanInfo | null>(null)
@@ -100,10 +115,17 @@ export function PhoneSection({ hostname }: { hostname: string }) {
   const [error, setError] = useState<Diagnostic | null>(null)
   const anchor = useRef<HTMLDivElement>(null)
 
-  // Scroll once the QR has loaded, so the section is its final height when it lands in view.
+  // Scroll as soon as the section is on screen, and once more when the QR codes have loaded
+  // (they change the height of everything above the fold). The request is only cleared after
+  // that second scroll, so React's double-run of effects in development cannot lose it.
   useEffect(() => {
-    if (!info || !takePhoneFocus(hostname)) return
-    anchor.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (!wantsPhoneFocus(hostname)) return
+    const scroll = () => anchor.current?.scrollIntoView({ behavior: info ? 'smooth' : 'auto', block: 'start' })
+    const id = window.setTimeout(() => {
+      scroll()
+      if (info) clearPhoneFocus(hostname)
+    }, info ? 50 : 0)
+    return () => window.clearTimeout(id)
   }, [hostname, info])
 
   const load = useCallback(async () => {
@@ -165,19 +187,33 @@ export function PhoneSection({ hostname }: { hostname: string }) {
           />
         )}
         {info?.on && info.url && (
-          <div className="flex flex-wrap items-center gap-4">
-            {info.qr_svg && <Qr svg={info.qr_svg} label="QR code for the site address" />}
-            <div className="min-w-0 flex-1">
-              <p className="break-all font-mono text-xs">{info.url}</p>
-              <Button size="sm" variant="ghost" className="mt-1 h-7 px-2 text-xs" onClick={() => void navigator.clipboard.writeText(info.url ?? '')}>
-                <Copy className="size-3.5" /> Copy address
-              </Button>
-              {info.https && (
-                <Button size="sm" variant="secondary" className="mt-1 ml-2 h-7 px-2 text-xs" onClick={() => setCertOpen(true)}>
-                  <Smartphone className="size-3.5" /> Install certificate on phone…
-                </Button>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-4">
+              {info.local_url && (
+                <LinkCard
+                  title={`By name: ${info.local_name}`}
+                  hint="iPhone, iPad, Mac, Windows and newer Android phones."
+                  url={info.local_url}
+                  qr={info.local_qr_svg ?? null}
+                />
               )}
+              <LinkCard
+                title={info.local_url ? 'By address (if the name does not open)' : 'By address'}
+                hint="Works on every phone on the same Wi-Fi."
+                url={info.url}
+                qr={info.qr_svg}
+              />
             </div>
+            {!info.local_url && (
+              <p className="rounded-md border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
+                Phones can open a site by name only when its domain ends in <code>.local</code> (for example <code>shop.local</code>). This site's domain is <code>{hostname}</code>, so the phone opens it with this computer's address and the site's own port above.
+              </p>
+            )}
+            {info.https && (
+              <Button size="sm" variant="secondary" className="h-7 w-fit px-2 text-xs" onClick={() => setCertOpen(true)}>
+                <Smartphone className="size-3.5" /> Install certificate on phone…
+              </Button>
+            )}
           </div>
         )}
         {info?.warnings.map((w) => (

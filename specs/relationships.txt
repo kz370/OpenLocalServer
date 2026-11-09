@@ -436,3 +436,7 @@ dispatch::StartCaShare | calls | Inner::start_ca_share -> lan_share::start (thre
 scheduler::start_clock | ticks | idle::tick (netstat only when a service has it on)
 idle::tick | stops | ServiceManager::stop -> spawn_waker (127.0.0.1:<port>) -> Inner::start_service_and_wait
 Core::dispatch | releases | IdleState::release before Start/Stop/Restart/StopAll
+Inner::sync_mdns | calls | mdns::Responder::{start, set_names} (names = shared sites' Domain.lan_local; restarted on a new LAN address; dropped when nothing is shared)
+lan::tick | calls | Inner::sync_mdns
+web::manager apply | reads | Domain.lan_local (server name) ; certs::names_for reads Domain.lan_local
+Sites row phone button | calls | confirmAction -> set_site_lan (+ focusPhoneSection on share)

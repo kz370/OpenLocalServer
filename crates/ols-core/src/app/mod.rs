@@ -135,6 +135,8 @@ pub struct Inner {
     pub dump_servers: Mutex<HashMap<String, (crate::process::ProcessId, u16)>>,
     /// §178: the running certificate page for phones, if any.
     pub ca_share: Mutex<Option<crate::lan_share::Share>>,
+    /// §178: the `.local` name responder while some site is shared.
+    pub mdns: Mutex<Option<crate::mdns::Responder>>,
     /// §179: services put to sleep and their wake listeners.
     pub idle: crate::idle::IdleState,
     pub(crate) pending_site_undo: Mutex<HashMap<String, PendingSiteUndo>>,
@@ -338,6 +340,7 @@ impl Inner {
             php_upgrade: Mutex::new(HashMap::new()),
             dump_servers: Mutex::new(HashMap::new()),
             ca_share: Mutex::new(None),
+            mdns: Mutex::new(None),
             idle: Default::default(),
             pending_site_undo: Mutex::new(HashMap::new()),
             project_events,

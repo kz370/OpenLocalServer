@@ -220,6 +220,10 @@ pub struct Domain {
     /// Serve the LAN port over plain HTTP (no certificate on the phone) instead of HTTPS.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub lan_http: bool,
+    /// While shared: the site's own domain when it ends in `.local`, answered over mDNS so a
+    /// phone can open it by name. `None` for other domains (opened by IP and port).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lan_local: Option<String>,
     /// Dynamic DNS provider ("cloudflare", "duckdns", "custom", or None).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ddns_provider: Option<String>,
@@ -304,6 +308,7 @@ impl Default for Domain {
             lan_ip: None,
             lan_port: None,
             lan_http: false,
+            lan_local: None,
             broadcast_provider: None,
             aliases: Vec::new(),
             ddns_provider: None,

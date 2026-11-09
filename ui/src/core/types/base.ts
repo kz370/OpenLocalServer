@@ -543,6 +543,12 @@ export interface LanInfo {
   https?: boolean
   /** The site has HTTPS, so the phone link can use it. */
   can_https?: boolean
+  /** The site's `.local` name and link (mDNS), while shared. */
+  local_name?: string | null
+  local_url?: string | null
+  local_qr_svg?: string | null
+  /** The `.local` responder is answering. */
+  mdns_running?: boolean
 }
 
 /** §179 Sleep when unused, per service. */

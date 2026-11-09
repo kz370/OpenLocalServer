@@ -46,6 +46,8 @@ notify-debouncer-mini = "0.7"
 base64 = "0.23.1"
 # QR codes for the phone page (MIT or Apache-2.0).
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+# §178 `.local` names: UDP 5353 shared with Windows' own mDNS needs address reuse before bind.
+socket2 = "0.6"
 ring = "0.17"
 
 [target.'cfg(windows)'.dependencies]

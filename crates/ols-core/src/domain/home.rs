@@ -39,6 +39,7 @@ pub(crate) fn home_domain(dir: &Path) -> Domain {
         lan_ip: None,
         lan_port: None,
         lan_http: false,
+        lan_local: None,
         broadcast_provider: None,
         ..Default::default()
     }

@@ -58,7 +58,7 @@ interface Row {
 }
 
 type Group = DomainSummary['group'] | 'none'
-type SiteFilter = 'enabled' | 'disabled' | 'missing' | 'all' | Group
+type SiteFilter = 'enabled' | 'disabled' | 'missing' | 'shared' | 'all' | Group
 
 /** Normalize path for cross-platform folder matching. */
 function normPath(p: string | null | undefined): string {
@@ -345,6 +345,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
 
   const isRowMissingFolder = (r: Row) => Boolean(r.project?.health && r.project.health.status !== 'healthy')
   const isRowEnabled = (r: Row) => !isRowMissingFolder(r) && ((r.site?.enabled ?? false) || r.extraDomains.some((e) => e.enabled))
+  // §178: shared with phones on the same Wi-Fi (its own domain or one of its extra domains).
+  const isRowShared = (r: Row) => !!r.site?.lan || r.extraDomains.some((e) => !!e.lan)
   const isRowDisabled = (r: Row) => !isRowMissingFolder(r) && (!!r.site && !r.site.enabled) && (!r.extraDomains.length || r.extraDomains.every((e) => !e.enabled))
 
   const matchesQuery = (r: Row, term: string) => {
@@ -358,17 +360,19 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const matches = rows.filter((r) => matchesQuery(r, q))
   const groupsPresent = GROUPS.filter((g) => rows.some((r) => !isRowMissingFolder(r) && groupOf(r) === g.id))
   const activeFilter =
-    filter === 'enabled' || filter === 'disabled' || filter === 'missing' || filter === 'all' || groupsPresent.some((g) => g.id === filter)
+    filter === 'enabled' || filter === 'disabled' || filter === 'missing' || filter === 'shared' || filter === 'all' || groupsPresent.some((g) => g.id === filter)
       ? filter
       : 'all'
   const matchesFilter = (r: Row, selected: SiteFilter) => {
     if (selected === 'missing') return isRowMissingFolder(r)
+    if (selected === 'shared') return isRowShared(r)
     if (selected === 'enabled') return isRowEnabled(r)
     if (selected === 'disabled') return isRowDisabled(r)
     if (selected === 'all') return true
     return !isRowMissingFolder(r) && groupOf(r) === selected
   }
   const visible = matches.filter((r) => matchesFilter(r, activeFilter))
+  const sharedCount = rows.filter(isRowShared).length
   const onSearch = (value: string) => {
     setQuery(value)
     // A search covers every filter: if the open tab has no hit, show all matching rows.
@@ -722,6 +726,42 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
   }
 
+  // §178: share a site with phones on the same Wi-Fi, or stop. Sharing opens the site's
+  // domains tab scrolled to the Open on my phone section, where the QR code is.
+  function shareOnNetwork(d: DomainSummary, projectId: string | null) {
+    void run(`lan:${d.hostname}`, async () => {
+      await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: true })
+      await refresh()
+      focusPhoneSection(d.hostname)
+      setTarget({ hostname: d.hostname, projectId, tab: 'domains' })
+    })
+  }
+  function stopSharingOnNetwork(d: DomainSummary) {
+    void run(`lan:${d.hostname}`, async () => {
+      await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: false })
+      await refresh()
+      notify.success(`${d.hostname} is no longer shared on your network.`)
+    })
+  }
+  // The row's phone button asks first: sharing opens the site to every device on the Wi-Fi.
+  async function togglePhoneShare(d: DomainSummary, projectId: string | null) {
+    const ok = d.lan
+      ? await confirmAction(`Stop sharing ${d.hostname} on your network? Phones on your Wi-Fi can no longer open it.`, 'Stop sharing', 'Stop sharing')
+      : await confirmAction(
+          `Share ${d.hostname} on your network? Any device on the same Wi-Fi can open it while sharing is on. OLS shows a QR code for your phone next.`,
+          'Share on my network',
+          'Share',
+          'amber',
+        )
+    if (!ok) return
+    if (d.lan) stopSharingOnNetwork(d)
+    else shareOnNetwork(d, projectId)
+  }
+  function showPhoneSection(d: DomainSummary, projectId: string | null) {
+    focusPhoneSection(d.hostname)
+    setTarget({ hostname: d.hostname, projectId, tab: 'domains' })
+  }
+
   function menuFor(r: Row): MenuItem[] {
     const { site: d, project: p } = r
     const items: MenuItem[] = []
@@ -829,28 +869,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       // Domains tab, where the QR code and the certificate helper are.
       items.push(
         d.lan
-          ? {
-              label: 'Stop sharing on my network',
-              icon: <Smartphone />,
-              hint: 'Your phone can no longer open this site',
-              onSelect: () =>
-                void run(`lan:${d.hostname}`, async () => {
-                  await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: false })
-                  await refresh()
-                }),
-            }
-          : {
-              label: 'Share this site on my network',
-              icon: <Smartphone />,
-              hint: 'Open it on a phone on the same Wi-Fi (QR code)',
-              onSelect: () =>
-                void run(`lan:${d.hostname}`, async () => {
-                  await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: true })
-                  await refresh()
-                  focusPhoneSection(d.hostname)
-                  setTarget({ hostname: d.hostname, projectId: p?.id ?? null, tab: 'domains' })
-                }),
-            },
+          ? { label: 'Stop sharing on my network', icon: <Smartphone />, hint: 'Your phone can no longer open this site', onSelect: () => stopSharingOnNetwork(d) }
+          : { label: 'Share this site on my network', icon: <Smartphone />, hint: 'Open it on a phone on the same Wi-Fi (QR code)', onSelect: () => shareOnNetwork(d, p?.id ?? null) },
       )
       items.push({
         label: 'Export to bundle…',
@@ -1110,6 +1130,10 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 { id: 'enabled', label: 'Enabled', badge: matches.filter(isRowEnabled).length, icon: <Check className="size-3.5 text-emerald-500" /> },
                 { id: 'disabled', label: 'Disabled', badge: matches.filter(isRowDisabled).length, icon: <CircleOff className="size-3.5 text-rose-500" /> },
                 { id: 'missing', label: 'Folder not found', badge: matches.filter(isRowMissingFolder).length, icon: <FolderX className="size-3.5 text-destructive" /> },
+                // Counter of sites phones can open; the tab only shows while one is shared.
+                ...(sharedCount > 0 || activeFilter === 'shared'
+                  ? [{ id: 'shared' as SiteFilter, label: 'On your network', badge: sharedCount, icon: <Smartphone className="size-3.5 text-emerald-500" /> }]
+                  : []),
                 ...groupsPresent.map((g) => ({
                   id: g.id as SiteFilter,
                   label: g.label,
@@ -1221,7 +1245,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                 </TableHead>
                 <TableHead>Domain</TableHead>
                 <TableHead className="hidden w-48 whitespace-nowrap @3xl:table-cell">Status</TableHead>
-                <TableHead className="w-24 whitespace-nowrap text-right">Actions</TableHead>
+                <TableHead className="w-28 whitespace-nowrap text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1408,6 +1432,11 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                                   <Globe className="size-3 text-sky-400" />
                                 </span>
                               )}
+                              {d?.lan && (
+                                <span title="Shared on your network (Open on my phone)" aria-label="Shared on your network">
+                                  <Smartphone className="size-3 text-emerald-500" />
+                                </span>
+                              )}
                               {d?.ddns_provider && (
                                 <span title={`Dynamic DNS active via ${d.ddns_provider}${d.ddns_last_ip ? ` (IP: ${d.ddns_last_ip})` : ''}`} aria-label="DDNS">
                                   <Zap className="size-3 text-amber-500" />
@@ -1519,6 +1548,16 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           <Globe className="size-3" /> Online
                         </a>
                       )}
+                      {d?.lan && (
+                        <button
+                          type="button"
+                          className="mt-0.5 flex cursor-pointer items-center gap-1 text-[11px] font-medium text-emerald-500 hover:underline"
+                          title="Shared on your network. Open the QR code and settings."
+                          onClick={() => showPhoneSection(d, p?.id ?? null)}
+                        >
+                          <Smartphone className="size-3" /> On your network
+                        </button>
+                      )}
                       {d?.ddns_provider && (
                         <div
                           className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-amber-500 dark:text-amber-400 font-medium"
@@ -1556,8 +1595,22 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                       )}
                       </div>
                     </TableCell>
-                    <TableCell className="w-24 whitespace-nowrap">
+                    <TableCell className="w-28 whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1">
+                        {d && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className={`h-8 w-8 cursor-pointer px-0 ${d.lan ? 'text-emerald-500 hover:text-emerald-600' : 'text-muted-foreground/60 hover:text-foreground'}`}
+                            disabled={busy === `lan:${d.hostname}`}
+                            onClick={() => void togglePhoneShare(d, p?.id ?? null)}
+                            title={d.lan ? 'Shared on your network: click to stop sharing' : 'Share on my network (open it on a phone)'}
+                            aria-label={d.lan ? `Stop sharing ${d.hostname} on your network` : `Share ${d.hostname} on your network`}
+                            aria-pressed={d.lan ?? false}
+                          >
+                            {busy === `lan:${d.hostname}` ? <Spinner /> : <Smartphone className="size-3.5" />}
+                          </Button>
+                        )}
                         <Button size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" onClick={openSettings} title="Settings" aria-label={`Settings for ${d?.hostname ?? p?.name}`}>
                           <Settings2 className="size-3.5" />
                         </Button>
@@ -1614,6 +1667,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                         ? `No site matches "${query.trim()}".`
                         : activeFilter === 'missing'
                           ? 'No sites with missing project folders.'
+                          : activeFilter === 'shared'
+                          ? 'No site is shared on your network.'
                           : 'No sites of this type.'}
                   </TableSpanCell>
                 </TableRow>

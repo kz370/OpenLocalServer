@@ -50,6 +50,7 @@ pub mod logging;
 pub mod mail;
 pub mod manifest;
 pub mod mcp_auth;
+pub mod mdns;
 pub mod migrate;
 pub mod migrate_sites;
 pub mod migration_guard;

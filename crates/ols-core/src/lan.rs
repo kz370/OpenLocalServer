@@ -7,6 +7,11 @@
 //! (`web::LanListen`). Over HTTPS the site's certificate also covers the LAN IP; the user can
 //! pick plain HTTP per site instead (no certificate on the phone). Sites without `lan` render
 //! byte for byte as before. OLS does not change the Windows firewall.
+//!
+//! A shared site whose own domain ends in `.local` (`shop.local`) can also be opened by that
+//! name: `mdns::Responder` answers it while the site is shared (`Domain.lan_local`). Other
+//! domains (`.test`, ...) cannot be looked up by a phone and use the IP link only. Not every
+//! phone resolves `.local` (older Android does not), so the IP link is always shown too.
 
 use std::net::{Ipv4Addr, UdpSocket};
 use std::time::Duration;
@@ -33,6 +38,16 @@ pub struct LanInfo {
     /// The site has HTTPS, so the phone link can use it. Without it the link is HTTP only.
     #[serde(default)]
     pub can_https: bool,
+    /// The `.local` name and its link, answered over mDNS while shared.
+    #[serde(default)]
+    pub local_name: Option<String>,
+    #[serde(default)]
+    pub local_url: Option<String>,
+    #[serde(default)]
+    pub local_qr_svg: Option<String>,
+    /// The mDNS responder is answering.
+    #[serde(default)]
+    pub mdns_running: bool,
 }
 
 /// The ports shared sites get, one each. Clear of the usual dev-server ports (3000, 5173,
@@ -120,10 +135,20 @@ fn ps_lines(command: &str) -> Vec<String> {
 }
 
 /// `true` when Windows calls the active network "Public" (inbound connections are blocked).
+/// Asking Windows takes a second or two, so the answer is kept for a minute.
 fn network_is_public() -> bool {
-    ps_lines("(Get-NetConnectionProfile).NetworkCategory")
+    static CACHE: std::sync::Mutex<Option<(std::time::Instant, bool)>> =
+        std::sync::Mutex::new(None);
+    if let Some((at, public)) = *CACHE.lock().unwrap() {
+        if at.elapsed() < Duration::from_secs(60) {
+            return public;
+        }
+    }
+    let public = ps_lines("(Get-NetConnectionProfile).NetworkCategory")
         .iter()
-        .any(|l| l.trim().eq_ignore_ascii_case("Public"))
+        .any(|l| l.trim().eq_ignore_ascii_case("Public"));
+    *CACHE.lock().unwrap() = Some((std::time::Instant::now(), public));
+    public
 }
 
 impl Inner {
@@ -139,6 +164,58 @@ impl Inner {
             .collect()
     }
 
+    /// The `.local` link: the site's normal ports, HTTPS when the site has it (its plain-HTTP
+    /// vhost would redirect there anyway) unless the user picked plain HTTP for the phone.
+    fn local_url(&self, d: &crate::domain::Domain, name: &str) -> String {
+        let cfg = self.web_config();
+        let ports = cfg.effective_ports(&crate::domain::resolved_server(d, &cfg));
+        if d.https && !d.lan_http {
+            match ports.https {
+                443 => format!("https://{name}/"),
+                p => format!("https://{name}:{p}/"),
+            }
+        } else {
+            match ports.http {
+                80 => format!("http://{name}/"),
+                p => format!("http://{name}:{p}/"),
+            }
+        }
+    }
+
+    /// Starts, updates or stops the `.local` responder so it answers exactly the shared sites'
+    /// names on the current LAN address. Returns why it could not start, if it could not.
+    pub(crate) fn sync_mdns(&self) -> Option<String> {
+        let names: Vec<String> = self
+            .domains
+            .lock()
+            .unwrap()
+            .list()
+            .into_iter()
+            .filter(|d| d.lan)
+            .filter_map(|d| d.lan_local)
+            .collect();
+        let ip = if names.is_empty() { None } else { lan_ipv4() };
+        let mut slot = self.mdns.lock().unwrap();
+        let Some(ip) = ip else {
+            *slot = None;
+            return None;
+        };
+        if let Some(r) = slot.as_ref() {
+            if r.ip() == ip {
+                r.set_names(names);
+                return None;
+            }
+        }
+        *slot = None; // the address changed: say goodbye on the old one first
+        match crate::mdns::Responder::start(ip, names) {
+            Ok(r) => {
+                *slot = Some(r);
+                None
+            }
+            Err(e) => Some(e),
+        }
+    }
+
     fn lan_info_for(&self, d: &crate::domain::Domain, check_network: bool) -> LanInfo {
         let can_https = d.https;
         let (true, Some(port), Some(ip)) = (d.lan, d.lan_port, d.lan_ip.clone()) else {
@@ -151,6 +228,10 @@ impl Inner {
                 port: None,
                 https: false,
                 can_https,
+                local_name: None,
+                local_url: None,
+                local_qr_svg: None,
+                mdns_running: false,
             };
         };
         let https = can_https && !d.lan_http;
@@ -162,6 +243,14 @@ impl Inner {
                     .to_string(),
             );
         }
+        let mdns_running = self.mdns.lock().unwrap().is_some();
+        if d.lan_local.is_some() && !mdns_running {
+            warnings.push(
+                "The .local name is not being announced: OLS could not open UDP port 5353. The IP link still works."
+                    .to_string(),
+            );
+        }
+        let local_url = d.lan_local.as_deref().map(|n| self.local_url(d, n));
         LanInfo {
             on: true,
             ip: Some(ip),
@@ -171,6 +260,10 @@ impl Inner {
             port: Some(port),
             https,
             can_https,
+            local_name: d.lan_local.clone(),
+            local_qr_svg: local_url.as_deref().map(qr_svg),
+            local_url,
+            mdns_running,
         }
     }
 
@@ -214,13 +307,16 @@ impl Inner {
             d.lan = true;
             d.lan_ip = Some(ip.to_string());
             d.lan_port = Some(port);
+            d.lan_local = local_name_for(&d.hostname);
         } else {
             d.lan = false;
             d.lan_ip = None;
             d.lan_port = None;
+            d.lan_local = None;
         }
         let saved = self.domains.lock().unwrap().update(d)?;
         self.apply_web(&[])?;
+        let _ = self.sync_mdns();
         Ok(self.lan_info_for(&saved, false))
     }
 
@@ -245,8 +341,15 @@ impl Inner {
         } else {
             d
         };
+        let _ = self.sync_mdns();
         Ok(self.lan_info_for(&d, true))
     }
+}
+
+/// The name a phone can open the site by: its own domain when that ends in `.local`.
+fn local_name_for(hostname: &str) -> Option<String> {
+    crate::mdns::is_local_name(hostname)
+        .then(|| hostname.trim_end_matches('.').to_ascii_lowercase())
 }
 
 /// Brings one shared site's address and port up to date. `true` when it was saved changed.
@@ -267,11 +370,17 @@ fn refresh_one(inner: &Inner, mut d: crate::domain::Domain) -> bool {
             changed = true;
         }
     }
+    let local = local_name_for(&d.hostname);
+    if d.lan_local != local {
+        d.lan_local = local;
+        changed = true;
+    }
     changed && inner.domains.lock().unwrap().update(d).is_ok()
 }
 
-/// Minute tick: only when a site is shared. Follows a changed LAN address (the certificate
-/// then covers the new IP) and gives a port to a site shared before ports existed.
+/// Minute tick: follows a changed LAN address (the certificate then covers the new IP), gives
+/// a port and a `.local` name to a site shared by an earlier build, and keeps the mDNS
+/// responder on the current address (or stops it once nothing is shared).
 pub fn tick(inner: &Inner) {
     let shared: Vec<crate::domain::Domain> = inner
         .domains
@@ -288,6 +397,7 @@ pub fn tick(inner: &Inner) {
     if changed {
         let _ = inner.apply_web(&[]);
     }
+    let _ = inner.sync_mdns();
 }
 
 #[cfg(test)]
@@ -338,6 +448,15 @@ mod tests {
     }
 
     #[test]
+    fn only_local_domains_get_a_name_link() {
+        assert_eq!(
+            local_name_for("Acme-Store.local"),
+            Some("acme-store.local".into())
+        );
+        assert_eq!(local_name_for("shop.test"), None);
+    }
+
+    #[test]
     fn links_are_ip_and_port() {
         assert_eq!(
             lan_url("192.168.1.5", 8700, true),
@@ -380,7 +499,7 @@ mod tests {
             ..Default::default()
         };
         let mut v = serde_json::to_value(&d).unwrap();
-        for k in ["lan", "lan_ip", "lan_port", "lan_http"] {
+        for k in ["lan", "lan_ip", "lan_port", "lan_http", "lan_local"] {
             v.as_object_mut().unwrap().remove(k);
         }
         // A site shared by the first 2.12 build still has its sslip.io name; it is ignored.
@@ -391,7 +510,7 @@ mod tests {
         assert!(!back.lan && back.lan_ip.is_none() && back.lan_port.is_none() && !back.lan_http);
         // And a default domain writes none of them.
         let out = serde_json::to_value(&d).unwrap();
-        for k in ["lan_ip", "lan_port", "lan_http"] {
+        for k in ["lan_ip", "lan_port", "lan_http", "lan_local"] {
             assert!(out.get(k).is_none(), "{k}");
         }
     }

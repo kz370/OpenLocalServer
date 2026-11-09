@@ -3554,6 +3554,7 @@ dependencies = [
  "serde_yaml_ng",
  "sha1",
  "sha2 0.10.9",
+ "socket2",
  "sysinfo",
  "tempfile",
  "thiserror 2.0.21",
