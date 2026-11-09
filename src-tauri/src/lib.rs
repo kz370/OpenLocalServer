@@ -604,6 +604,8 @@ fn shutdown(core: &Core) -> bool {
     core.inner().stop_all_workers();
     core.inner().terminals.close_all();
     core.inner().web.stop();
+    // Sharing on the network never outlives the app: nothing is left saved as shared.
+    ols_core::lan::stop_all(core.inner(), false);
     for s in core.services().list() {
         if s.running {
             if let Err(e) = core.services().stop(&s.id) {

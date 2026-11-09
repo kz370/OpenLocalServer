@@ -84,6 +84,7 @@ fn daemon(paths: &AppPaths, stop: bool) -> ExitCode {
     i.stop_all_workers();
     i.terminals.close_all();
     i.web.stop();
+    ols_core::lan::stop_all(i, false);
     for s in core.services().list() {
         if s.running {
             if let Err(e) = core.services().stop(&s.id) {

@@ -14,12 +14,17 @@ impl Core {
         let mut unhandled = None;
         let outcome: Result<CoreResponse, CoreError> = (|| {
             let res = match command {
-                C::GetWebStatus => Ok(R::WebStatus {
-                    status: Box::new(
-                        i.web
-                            .status(&i.web_config(), &i.domains.lock().unwrap().list()),
-                    ),
-                }),
+                C::GetWebStatus => {
+                    // The UI polls this: a web server that died or a site turned off ends its
+                    // sharing right away rather than at the next minute.
+                    crate::lan::reconcile(i);
+                    Ok(R::WebStatus {
+                        status: Box::new(
+                            i.web
+                                .status(&i.web_config(), &i.domains.lock().unwrap().list()),
+                        ),
+                    })
+                }
                 C::GetWebConfig => Ok(R::WebConfig {
                     config: i.web_config(),
                 }),
@@ -345,6 +350,7 @@ impl Core {
                 }
                 C::StopWeb => {
                     i.web.stop();
+                    crate::lan::stop_all(i, false);
                     Ok(R::Ok)
                 }
                 C::ValidateWeb => Ok(R::Text {

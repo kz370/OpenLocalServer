@@ -377,6 +377,9 @@ impl Inner {
         }
         core.recover_pending_migrations();
         core.apply_plugins();
+        // Sharing on the network never outlives a run: after a crash or a kill it is still
+        // saved as on, so it is cleared here before any web server starts.
+        crate::lan::stop_all(&core, false);
         Ok(core)
     }
 

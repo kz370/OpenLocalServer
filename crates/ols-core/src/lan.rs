@@ -397,10 +397,90 @@ fn refresh_one(inner: &Inner, mut d: crate::domain::Domain) -> bool {
     changed && inner.domains.lock().unwrap().update(d).is_ok()
 }
 
+/// Turns sharing off for every shared site. Sharing never outlives the run that started it:
+/// this is called when OLS starts (a crash or a kill leaves `lan` saved as on), when it quits,
+/// and by `reconcile`. `apply` re-renders the web configuration so the extra listeners go
+/// away; startup and shutdown skip it because the web servers are not running then and the
+/// next start renders from the saved (now unshared) sites.
+pub fn stop_all(inner: &Inner, apply: bool) -> usize {
+    let shared: Vec<crate::domain::Domain> = inner
+        .domains
+        .lock()
+        .unwrap()
+        .list()
+        .into_iter()
+        .filter(|d| d.lan)
+        .collect();
+    let mut stopped = 0;
+    for mut d in shared {
+        d.lan = false;
+        d.lan_ip = None;
+        d.lan_port = None;
+        d.lan_local = None;
+        if inner.domains.lock().unwrap().update(d).is_ok() {
+            stopped += 1;
+        }
+    }
+    if stopped > 0 {
+        if apply {
+            let _ = inner.apply_web(&[]);
+        }
+        tracing::info!(stopped, "sharing on the network turned off");
+    }
+    let _ = inner.sync_mdns();
+    stopped
+}
+
+/// Turns sharing off for any shared site that can no longer be reached: the site is disabled
+/// or gone, or the web server that serves it is not running. Cheap when nothing is shared
+/// (one pass over the domain list), so it runs on every web status poll and every minute.
+pub fn reconcile(inner: &Inner) -> usize {
+    let cfg = inner.web_config();
+    let dead: Vec<crate::domain::Domain> = inner
+        .domains
+        .lock()
+        .unwrap()
+        .list()
+        .into_iter()
+        .filter(|d| d.lan)
+        .filter(|d| {
+            !d.enabled
+                || !inner
+                    .web
+                    .is_running_id(&crate::domain::resolved_server(d, &cfg))
+        })
+        .collect();
+    if dead.is_empty() {
+        return 0;
+    }
+    let mut stopped = 0;
+    for mut d in dead {
+        d.lan = false;
+        d.lan_ip = None;
+        d.lan_port = None;
+        d.lan_local = None;
+        if inner.domains.lock().unwrap().update(d).is_ok() {
+            stopped += 1;
+        }
+    }
+    // The server is down or the site is off, so the configuration is only re-rendered when
+    // a server is still up (to drop the listener); otherwise the next start does it.
+    if inner.web.is_running() {
+        let _ = inner.apply_web(&[]);
+    }
+    let _ = inner.sync_mdns();
+    tracing::info!(
+        stopped,
+        "sharing stopped: the site is off or its web server is not running"
+    );
+    stopped
+}
+
 /// Minute tick: follows a changed LAN address (the certificate then covers the new IP), gives
 /// a port and a `.local` name to a site shared by an earlier build, and keeps the mDNS
 /// responder on the current address (or stops it once nothing is shared).
 pub fn tick(inner: &Inner) {
+    reconcile(inner);
     let shared: Vec<crate::domain::Domain> = inner
         .domains
         .lock()

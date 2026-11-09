@@ -156,6 +156,7 @@ impl Core {
                     if crate::web::SERVER_IDS.contains(&id.as_str()) {
                         i.web.stop_server(&id);
                         i.services.clear_start_failure(&id);
+                        crate::lan::reconcile(i);
                     } else {
                         i.services.stop(&id).map_err(CoreError::ServiceError)?;
                     }
@@ -171,6 +172,7 @@ impl Core {
                     i.stop_all_tunnels();
                     i.stop_all_workers();
                     i.web.stop();
+                    crate::lan::stop_all(i, false);
                     let mut failed = Vec::new();
                     for service in i.services.list() {
                         if !service.running {

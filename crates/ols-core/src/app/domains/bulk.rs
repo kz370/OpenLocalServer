@@ -112,6 +112,10 @@ impl Inner {
             .ok_or_else(|| CoreError::DomainError(format!("{hostname} is not a known domain")))?;
         d.enabled = enabled;
         domains.update(d)?;
+        drop(domains);
+        if !enabled {
+            crate::lan::reconcile(self);
+        }
         Ok(())
     }
 
@@ -122,10 +126,15 @@ impl Inner {
         hostnames: &[String],
         enabled: bool,
     ) -> Result<BulkOutcome, CoreError> {
-        self.domains
+        let outcome = self
+            .domains
             .lock()
             .unwrap()
-            .bulk_set_enabled(hostnames, enabled)
+            .bulk_set_enabled(hostnames, enabled)?;
+        if !enabled {
+            crate::lan::reconcile(self);
+        }
+        Ok(outcome)
     }
 
     /// Pins a group of sites to one web server, or back to the default when `server` is

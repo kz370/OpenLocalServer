@@ -632,6 +632,61 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
   }
 
+  // §178: the selected sites that can be shared / are shared right now.
+  const pickedSites = pickedRows.flatMap((r) => [r.site, ...r.extraDomains].filter((d): d is DomainSummary => !!d))
+  const shareableSites = pickedSites.filter((d) => !d.lan && !shareBlocked(d))
+  const sharedSites = pickedSites.filter((d) => d.lan)
+
+  // One site off: the row's green phone button. Asks first, like every sharing change.
+  async function stopSharing(d: DomainSummary) {
+    if (!(await confirmAction(`Stop sharing ${d.hostname}? Phones on your Wi-Fi can no longer open it.`, 'Stop sharing', 'Stop sharing'))) return
+    await run(`lan:${d.hostname}`, async () => {
+      await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: false })
+      await refresh()
+      notify.success(`${d.hostname} is no longer shared on your network.`)
+    })
+  }
+
+  // One site on: the row's grey phone button and the right-click item. Asks first, shares
+  // right away (no switch to flip), then opens the sharing window with the QR codes.
+  async function shareNow(d: DomainSummary) {
+    const blocked = shareBlocked(d)
+    if (blocked) {
+      notify.warning(blocked)
+      return
+    }
+    if (!(await confirmAction(`Share ${d.hostname} on your network? Any device on the same Wi-Fi can open it while sharing is on. OLS shows the QR code for your phone next.`, 'Share on my network', 'Share', 'amber'))) return
+    await run(`lan:${d.hostname}`, async () => {
+      await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: true })
+      await refresh()
+      setShareFor(d.hostname)
+    })
+  }
+
+  async function bulkShare(on: boolean) {
+    const list = on ? shareableSites : sharedSites
+    if (list.length === 0) return
+    const names = list.length === 1 ? list[0].hostname : `${list.length} sites`
+    const ok = on
+      ? await confirmAction(`Share ${names} on your network? Any device on the same Wi-Fi can open ${list.length === 1 ? 'it' : 'them'} while sharing is on.`, 'Share on my network', 'Share', 'amber')
+      : await confirmAction(`Stop sharing ${names}? Phones on your Wi-Fi can no longer open ${list.length === 1 ? 'it' : 'them'}.`, 'Stop sharing', 'Stop sharing')
+    if (!ok) return
+    await run('bulk', async () => {
+      const failed: string[] = []
+      let done = 0
+      for (const d of list) {
+        try {
+          await runCommand({ type: 'set_site_lan', hostname: d.hostname, on })
+          done += 1
+        } catch (e) {
+          failed.push(`${d.hostname}: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+      await refresh()
+      reportBulk(on ? 'Shared on your network' : 'Stopped sharing', done, failed)
+    })
+  }
+
   async function movePickedToServer() {
     if (pickedCount === 0 || !bulkServerChoice) return
     // The default server is not a pin: `null` clears the override and puts the sites back
@@ -731,8 +786,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // §178: the dedicated sharing window (QR codes, HTTPS, certificate). Turning sharing on or
   // off, with its confirmation, happens inside it. A site that is off, or whose web server is
   // stopped, cannot be shared; a shared one can always be opened to stop it.
-  const shareBlocked = (d: DomainSummary): string | null =>
-    d.lan ? null : !d.enabled ? 'Turn the site on first: a disabled site is not served.' : !status?.running ? 'Start the web server first.' : null
+  function shareBlocked(d: DomainSummary): string | null {
+    return d.lan ? null : !d.enabled ? 'Turn the site on first: a disabled site is not served.' : !status?.running ? 'Start the web server first.' : null
+  }
 
   function menuFor(r: Row): MenuItem[] {
     const { site: d, project: p } = r
@@ -843,7 +899,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         icon: <PhoneShareIcon />,
         hint: shareBlocked(d) ?? (d.lan ? 'QR codes, or stop sharing' : 'Open it on a phone on the same Wi-Fi (QR code)'),
         disabled: !!shareBlocked(d),
-        onSelect: () => setShareFor(d.hostname),
+        onSelect: () => void (d.lan ? setShareFor(d.hostname) : shareNow(d)),
       })
       items.push({
         label: 'Export to bundle…',
@@ -1152,6 +1208,19 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                   </Button>
                   <Button size="sm" variant="outline" className="h-8" disabled={busyBulk || noneEnabled} onClick={() => void bulkEnable(false)} title="Turn every selected site off">
                     <StopIcon /> Disable
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    disabled={busyBulk || shareableSites.length === 0}
+                    onClick={() => void bulkShare(true)}
+                    title={shareableSites.length === 0 ? 'Nothing to share: the selected sites are shared already, turned off, or their web server is stopped' : 'Share every selected site on your network (phones on the same Wi-Fi)'}
+                  >
+                    <PhoneShareIcon className="size-4" /> Share{shareableSites.length > 0 ? ` (${shareableSites.length})` : ''}
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8" disabled={busyBulk || sharedSites.length === 0} onClick={() => void bulkShare(false)} title="Stop sharing every selected site on your network">
+                    <PhoneShareIcon className="size-4" /> Stop sharing{sharedSites.length > 0 ? ` (${sharedSites.length})` : ''}
                   </Button>
                   <Select aria-label="Move the selected sites to a web server" className="h-8 w-40" value={bulkServerChoice} onChange={(e) => setBulkServerChoice(e.target.value)}>
                     <option value="">Web server…</option>
@@ -1586,9 +1655,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             variant="ghost"
                             className={`h-8 w-8 px-0 ${d.lan ? 'cursor-pointer text-emerald-500 hover:text-emerald-600' : 'cursor-pointer text-muted-foreground/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40'}`}
                             disabled={!!shareBlocked(d)}
-                            onClick={() => setShareFor(d.hostname)}
-                            title={d.lan ? 'Shared on your network: open the sharing window' : (shareBlocked(d) ?? 'Share on my network (open it on a phone)')}
-                            aria-label={d.lan ? `Sharing window for ${d.hostname}` : `Share ${d.hostname} on your network`}
+                            onClick={() => void (d.lan ? stopSharing(d) : shareNow(d))}
+                            title={d.lan ? 'Shared on your network: click to stop sharing' : (shareBlocked(d) ?? 'Share on my network (asks first, then shows the QR code)')}
+                            aria-label={d.lan ? `Stop sharing ${d.hostname}` : `Share ${d.hostname} on your network`}
                             aria-pressed={d.lan ?? false}
                           >
                             <PhoneShareIcon className="size-3.5" />

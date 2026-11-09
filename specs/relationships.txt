@@ -439,3 +439,5 @@ Inner::sync_mdns | calls | mdns::Responder::{start, set_names} (names = shared s
 lan::tick | calls | Inner::sync_mdns
 web::manager apply | reads | Domain.lan_local (server name) ; certs::names_for reads Domain.lan_local
 Sites row phone button | opens | PhoneShareDialog -> PhoneSection -> confirmAction -> set_site_lan
+dispatch::GetWebStatus / StopService / StopWeb / set_domain_enabled | calls | lan::reconcile / lan::stop_all
+Core::with_parts / src-tauri shutdown / olsc daemon exit | call | lan::stop_all
