@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageLayout } from '@/components/PageLayout'
 import { DiagnosticsCard } from '@/components/DiagnosticsCard'
 import { SecuritySummaryCard } from '@/components/project/SecurityPanel'
+import { useDashboardSecurity } from '@/lib/dashboardSecurity'
 import { ErrorCard } from '@/components/ErrorCard'
 import { asDiagnostic } from '@/lib/diagnostic'
 import { Spinner } from '@/components/Spinner'
@@ -55,6 +56,7 @@ export function DashboardPage({
   onNavigate: (p: Page) => void
   onOpenLogs: (source: string) => void
 }) {
+  const showSecurity = useDashboardSecurity()
   const [data, setData] = useState<DashboardData | null>(dashboardCache.get)
   const [dataError, setDataError] = useState<Diagnostic | null>(null)
   const [diagToken, setDiagToken] = useState(0)
@@ -296,7 +298,7 @@ export function DashboardPage({
         healthProblems={data?.health ?? []}
       />
 
-      <SecuritySummaryCard onOpenProjects={() => onNavigate('projects')} />
+      {showSecurity && <SecuritySummaryCard onOpenProjects={() => onNavigate('projects')} />}
 
       {/* Web server strip: one full-width card (~52-58px), single row vertically centered */}
       <Card className="shadow-xs min-h-[52px] px-3.5 py-2 flex flex-wrap items-center justify-between gap-3">

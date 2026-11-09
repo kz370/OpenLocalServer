@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import type { Diagnostic } from '@/core'
+import { setDashboardSecurity, useDashboardSecurity } from '@/lib/dashboardSecurity'
 import { setDockerizeMenu, useDockerizeMenuSetting } from '@/lib/dockerizeMenu'
 import { setHiddenSidebarItems, useHiddenSidebarItems } from '@/lib/sidebarVisibility'
 
@@ -18,6 +19,7 @@ import { setHiddenSidebarItems, useHiddenSidebarItems } from '@/lib/sidebarVisib
 export function SidebarItemsSettings() {
   const hidden = useHiddenSidebarItems()
   const dockerizeMenu = useDockerizeMenuSetting()
+  const dashboardSecurity = useDashboardSecurity()
   const dockerHidden = hidden.has('docker')
   const [error, setError] = useState<Diagnostic | null>(null)
 
@@ -116,6 +118,20 @@ export function SidebarItemsSettings() {
             disabled={dockerHidden}
             label={`${dockerizeMenu ? 'Hide' : 'Show'} Dockerize in right-click menus`}
             onChange={(v) => setDockerizeMenu(v).catch((err) => setError(asDiagnostic(err)))}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/60 px-3 py-2">
+          <span className="min-w-0 flex-1 text-sm">
+            <span className="block">Security section on the Dashboard</span>
+            <span className="block text-xs text-muted-foreground">
+              The security and end-of-life summary row. Projects still show their own security results.
+            </span>
+          </span>
+          <Switch
+            size="sm"
+            checked={dashboardSecurity}
+            label={`${dashboardSecurity ? 'Hide' : 'Show'} the Security section on the Dashboard`}
+            onChange={(v) => setDashboardSecurity(v).catch((err) => setError(asDiagnostic(err)))}
           />
         </div>
       </CardContent>
