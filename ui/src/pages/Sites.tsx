@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, UserRound, Wrench, X, Zap } from 'lucide-react'
+import { Activity, Check, ChevronDown, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, UserRound, Wrench, X, Zap } from 'lucide-react'
 import { useEffect, useState, Fragment } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -24,7 +24,7 @@ import { TechIcon } from '@/components/TechIcon'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog } from '@/components/ui/dialog'
-import { Field, Select } from '@/components/ui/form'
+import { Field } from '@/components/ui/form'
 import { OverflowTabs } from '@/components/ui/OverflowTabs'
 import { Input } from '@/components/ui/input'
 import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
@@ -181,7 +181,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
-  const [bulkServerChoice, setBulkServerChoice] = useState('')
+  // The bulk bar's drop-down menus (Power / Share / Web server / More).
+  const [bulkMenu, setBulkMenu] = useState<{ kind: 'power' | 'share' | 'server' | 'more'; anchor: MenuAnchor } | null>(null)
   /** Which sites the export dialog is open for: one row, or the whole selection. */
   const [exportFor, setExportFor] = useState<string[] | null>(null)
   // WordPress projects, straight from the folders on disk: this is what decides which rows
@@ -687,23 +688,22 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
   }
 
-  async function movePickedToServer() {
-    if (pickedCount === 0 || !bulkServerChoice) return
+  async function movePickedToServer(choice: string) {
+    if (pickedCount === 0 || !choice) return
     // The default server is not a pin: `null` clears the override and puts the sites back
     // on whatever the default is today.
-    const toDefault = bulkServerChoice === 'default'
-    const target = serverChoices.find((s) => s.id === bulkServerChoice)
-    const label = toDefault ? `the default (${target?.name ?? defaultServer})` : target?.name ?? bulkServerChoice
+    const toDefault = choice === 'default'
+    const target = serverChoices.find((s) => s.id === choice)
+    const label = toDefault ? `the default (${target?.name ?? defaultServer})` : target?.name ?? choice
     await run('bulk', async () => {
       const { hostnames, noSite } = await resolveSites()
       if (hostnames.length === 0) {
         notify.warning(`Nothing to move: ${noSite.join(', ')} ${noSite.length === 1 ? 'has' : 'have'} no site to serve.`)
         return
       }
-      const out = await web.setDomainsServer(hostnames, toDefault ? null : bulkServerChoice)
+      const out = await web.setDomainsServer(hostnames, toDefault ? null : choice)
       reportBulk(`Moved to ${label}`, out.changed, [...out.skipped, ...noSite.map((n) => `${n} has no site to serve`)])
       setPicked(new Set())
-      setBulkServerChoice('')
     })
   }
 
@@ -788,6 +788,29 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   // stopped, cannot be shared; a shared one can always be opened to stop it.
   function shareBlocked(d: DomainSummary): string | null {
     return d.lan ? null : !d.enabled ? 'Turn the site on first: a disabled site is not served.' : !status?.running ? 'Start the web server first.' : null
+  }
+
+  // The bulk bar's menus. Entries that would change nothing are left out instead of greyed
+  // out, so every line in a menu does something for the current selection.
+  function bulkMenuItems(kind: 'power' | 'share' | 'server' | 'more'): MenuItem[] {
+    const items: MenuItem[] = []
+    if (kind === 'power') {
+      if (!allEnabled) items.push({ label: 'Enable', icon: <Play />, hint: 'Turn every selected site on', onSelect: () => void bulkEnable(true) })
+      if (!noneEnabled) items.push({ label: 'Disable', icon: <StopIcon />, hint: 'Turn every selected site off', onSelect: () => void bulkEnable(false) })
+    } else if (kind === 'share') {
+      if (shareableSites.length > 0) items.push({ label: `Share on my network (${shareableSites.length})`, icon: <PhoneShareIcon />, hint: 'Phones on the same Wi-Fi can open them', onSelect: () => void bulkShare(true) })
+      if (sharedSites.length > 0) items.push({ label: `Stop sharing (${sharedSites.length})`, icon: <PhoneShareIcon />, onSelect: () => void bulkShare(false) })
+      if (items.length === 0) items.push({ label: 'Nothing to share', icon: <PhoneShareIcon />, hint: 'The selected sites are off, or their web server is stopped', disabled: true })
+    } else if (kind === 'server') {
+      items.push({ label: `Use default server (${serverChoices.find((x) => x.active)?.name ?? defaultServer})`, icon: <HardDrive />, hint: 'Put the selected sites on whatever the default web server is', onSelect: () => void movePickedToServer('default') })
+      for (const sv of serverChoices.filter((x) => !x.active)) items.push({ label: `Move to ${sv.name}`, icon: <HardDrive />, onSelect: () => void movePickedToServer(sv.id) })
+    } else {
+      if (noDomainCount > 0) items.push({ label: 'Add auto domain', icon: <Globe />, hint: `Give ${noDomainCount} project${noDomainCount === 1 ? '' : 's'} its <folder>.<tld> site`, onSelect: () => void bulkAutoDomain() })
+      if (pickedHostnames.length > 0) items.push({ label: 'Export…', icon: <Download />, hint: 'Into one bundle', onSelect: () => setExportFor(pickedHostnames) })
+      items.push({ label: 'Hide / Exclude', icon: <EyeOff />, hint: 'Without touching project files', onSelect: () => void bulkHideExclude() })
+      items.push({ label: 'Delete…', icon: <Trash2 />, danger: true, separatorAbove: true, hint: 'Into an ols_excluded_sites folder', onSelect: () => void bulkDelete() })
+    }
+    return items
   }
 
   function menuFor(r: Row): MenuItem[] {
@@ -1189,80 +1212,71 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         footer={
           <>
             {pickedCount > 0 && (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-border bg-[var(--dialog-surface)] px-4 py-2">
-                  <span className="whitespace-nowrap text-sm text-muted-foreground">
-                    {pickedCount} selected
-                  </span>
-                  <Button size="sm" variant="outline" className="h-8" disabled={busyBulk || allEnabled} onClick={() => void bulkEnable(true)} title="Turn every selected site on">
-                    <Play /> Enable
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    disabled={busyBulk || noDomainCount === 0}
-                    onClick={() => void bulkAutoDomain()}
-                    title={noDomainCount === 0 ? 'Every selected row already has a site' : `Give ${noDomainCount} project${noDomainCount === 1 ? '' : 's'} its <folder>.<tld> site`}
-                  >
-                    <Globe /> Add auto domain
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-8" disabled={busyBulk || noneEnabled} onClick={() => void bulkEnable(false)} title="Turn every selected site off">
-                    <StopIcon /> Disable
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    disabled={busyBulk || shareableSites.length === 0}
-                    onClick={() => void bulkShare(true)}
-                    title={shareableSites.length === 0 ? 'Nothing to share: the selected sites are shared already, turned off, or their web server is stopped' : 'Share every selected site on your network (phones on the same Wi-Fi)'}
-                  >
-                    <PhoneShareIcon className="size-4" /> Share{shareableSites.length > 0 ? ` (${shareableSites.length})` : ''}
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-8" disabled={busyBulk || sharedSites.length === 0} onClick={() => void bulkShare(false)} title="Stop sharing every selected site on your network">
-                    <PhoneShareIcon className="size-4" /> Stop sharing{sharedSites.length > 0 ? ` (${sharedSites.length})` : ''}
-                  </Button>
-                  <Select aria-label="Move the selected sites to a web server" className="h-8 w-40" value={bulkServerChoice} onChange={(e) => setBulkServerChoice(e.target.value)}>
-                    <option value="">Web server…</option>
-                    <option value="default">Default ({serverChoices.find((s) => s.active)?.name ?? defaultServer})</option>
-                    {serverChoices
-                      .filter((s) => !s.active)
-                      .map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                  </Select>
-                  <Button size="sm" variant="outline" className="h-8" disabled={busyBulk || !bulkServerChoice} onClick={() => void movePickedToServer()}>
-                    Move sites
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    disabled={pickedHostnames.length === 0}
-                    onClick={() => setExportFor(pickedHostnames)}
-                    title="Export the selected sites into one bundle"
-                  >
-                    <Download /> Export
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-8" disabled={busyBulk} onClick={() => void bulkHideExclude()} title="Hide/exclude selected sites without touching project files">
-                    <EyeOff /> Hide/Exclude
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-8 text-destructive hover:bg-destructive/10" disabled={busyBulk} onClick={() => void bulkDelete()} title="Move selected sites into an ols_excluded_sites folder">
-                    <Trash2 /> Delete
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-8" disabled={busyBulk} onClick={() => setPicked(new Set())}>
-                    Clear
-                  </Button>
-{restCount > 0 && (
-              <button
-                className="cursor-pointer self-start text-xs text-muted-foreground underline"
-                onClick={() => setPicked(new Set(visibleKeys))}
-              >
-                Select all {visibleKeys.length} matching {visibleKeys.length === 1 ? 'row' : 'rows'}
-              </button>
-            )}
+              <div className="flex flex-wrap items-center gap-2 border-t border-border bg-[var(--dialog-surface)] px-4 py-2">
+                <span className="whitespace-nowrap text-sm font-medium">{pickedCount} selected</span>
+                <Button size="sm" variant="ghost" className="h-8" disabled={busyBulk} onClick={() => setPicked(new Set())} title="Clear the selection">
+                  <X className="size-4" /> Clear
+                </Button>
+                {restCount > 0 && (
+                  <button className="cursor-pointer whitespace-nowrap text-xs text-muted-foreground underline hover:text-foreground" onClick={() => setPicked(new Set(visibleKeys))}>
+                    Select all {visibleKeys.length} matching {visibleKeys.length === 1 ? 'row' : 'rows'}
+                  </button>
+                )}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  {([
+                    { kind: 'power', label: 'Power', icon: <Play className="size-4" /> },
+                    { kind: 'share', label: 'Share', icon: <PhoneShareIcon className="size-4" /> },
+                    { kind: 'server', label: 'Web server', icon: <HardDrive className="size-4" /> },
+                    { kind: 'more', label: 'More', icon: <MoreHorizontal className="size-4" /> },
+                  ] as const).map((b) => {
+                    // A group with a single usable action is that action's own button: a
+                    // drop-down that hides one item behind a click is just an extra click.
+                    const entries = bulkMenuItems(b.kind)
+                    const usable = entries.filter((it): it is Exclude<MenuItem, 'separator'> => it !== 'separator' && !it.disabled)
+                    if (usable.length === 0 && b.kind === 'share') {
+                      const why = entries.find((it): it is Exclude<MenuItem, 'separator'> => it !== 'separator')?.hint
+                      return (
+                        <Button key={b.kind} size="sm" variant="outline" className="h-8" disabled title={why}>
+                          {b.icon} Share
+                        </Button>
+                      )
+                    }
+                    if (usable.length === 1) {
+                      const only = usable[0]
+                      return (
+                        <Button
+                          key={b.kind}
+                          size="sm"
+                          variant="outline"
+                          className={`h-8 ${only.danger ? 'text-destructive hover:bg-destructive/10' : ''}`}
+                          disabled={busyBulk}
+                          title={only.hint}
+                          onClick={() => only.onSelect?.()}
+                        >
+                          {only.icon ?? b.icon} {only.label}
+                        </Button>
+                      )
+                    }
+                    return (
+                      <Button
+                        key={b.kind}
+                        size="sm"
+                        variant="outline"
+                        className={`h-8 ${bulkMenu?.kind === b.kind ? 'bg-accent' : ''}`}
+                        disabled={busyBulk}
+                        aria-haspopup="menu"
+                        onClick={(e) => {
+                          const el = e.currentTarget
+                          setBulkMenu(bulkMenu?.kind === b.kind ? null : { kind: b.kind, anchor: { type: 'button', rect: el.getBoundingClientRect(), element: el } })
+                        }}
+                      >
+                        {b.icon} {b.label}
+                        {b.kind === 'share' && sharedSites.length > 0 ? <span className="rounded-full bg-emerald-500/15 px-1.5 text-[11px] text-emerald-500">{sharedSites.length}</span> : null}
+                        {b.kind !== 'more' && <ChevronDown className="size-3.5 opacity-60" />}
+                      </Button>
+                    )
+                  })}
+                </div>
               </div>
             )}
             {visible.length > 0 && (
@@ -1727,6 +1741,9 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
               )}
             </TableBody>
           </Table>
+          {bulkMenu && (
+            <FloatingMenu anchor={bulkMenu.anchor} placement="top" onClose={() => setBulkMenu(null)} items={bulkMenuItems(bulkMenu.kind)} />
+          )}
           {activeMenu && (() => {
             const row = rows.find((r) => r.key === activeMenu.key)
             if (!row) return null
