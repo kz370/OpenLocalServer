@@ -1,4 +1,4 @@
-import { Check, FolderOpen, FolderTree, ListFilter } from 'lucide-react'
+import { Check, ChevronDown, FolderOpen, FolderTree, ListFilter } from 'lucide-react'
 import { useState } from 'react'
 
 import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
@@ -33,14 +33,14 @@ export function RootFolderControls({ view, onChange }: { view: ListView; onChang
         variant="outline"
         className={`h-8 cursor-pointer gap-1.5 ${anchor ? 'bg-accent' : ''}`}
         aria-haspopup="menu"
-        title="Group and sort the list"
+        title="Choose how the list is sorted, or group it by root folder"
         onClick={(e) => {
           const el = e.currentTarget
           setAnchor(anchor ? null : { type: 'button', rect: el.getBoundingClientRect(), element: el })
         }}
       >
-        <ListFilter className="size-4" /> View
-        {view.group && <span className="rounded-full bg-primary/15 px-1.5 text-[11px] text-primary">grouped</span>}
+        <ListFilter className="size-4" /> {view.group ? 'Grouped by folder' : view.sort === 'root' ? 'Sort: Root folder' : 'Sort: Name'}
+        <ChevronDown className="size-3.5 opacity-60" />
       </Button>
       {anchor && <FloatingMenu anchor={anchor} placement="bottom-end" items={items} onClose={() => setAnchor(null)} />}
     </>
