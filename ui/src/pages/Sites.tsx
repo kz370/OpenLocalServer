@@ -657,6 +657,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       return
     }
     if (!(await confirmAction(`Share ${d.hostname} on your network? Any device on the same Wi-Fi can open it while sharing is on. OLS shows the QR code for your phone next.`, 'Share on my network', 'Share', 'amber'))) return
+    notify.info(`Sharing ${d.hostname} on your network… this can take a few seconds.`)
     await run(`lan:${d.hostname}`, async () => {
       await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: true })
       await refresh()
@@ -672,6 +673,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       ? await confirmAction(`Share ${names} on your network? Any device on the same Wi-Fi can open ${list.length === 1 ? 'it' : 'them'} while sharing is on.`, 'Share on my network', 'Share', 'amber')
       : await confirmAction(`Stop sharing ${names}? Phones on your Wi-Fi can no longer open ${list.length === 1 ? 'it' : 'them'}.`, 'Stop sharing', 'Stop sharing')
     if (!ok) return
+    notify.info(`${on ? 'Sharing' : 'Stopping sharing for'} ${names}… this can take a few seconds.`)
     await run('bulk', async () => {
       const failed: string[] = []
       let done = 0
@@ -1674,13 +1676,13 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             size="sm"
                             variant="ghost"
                             className={`h-8 w-8 px-0 ${d.lan ? 'cursor-pointer text-emerald-500 hover:text-emerald-600' : 'cursor-pointer text-muted-foreground/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40'}`}
-                            disabled={!!shareBlocked(d)}
+                            disabled={!!shareBlocked(d) || busy === `lan:${d.hostname}`}
                             onClick={() => void (d.lan ? stopSharing(d) : shareNow(d))}
                             title={d.lan ? 'Shared on your network: click to stop sharing' : (shareBlocked(d) ?? 'Share on my network (asks first, then shows the QR code)')}
                             aria-label={d.lan ? `Stop sharing ${d.hostname}` : `Share ${d.hostname} on your network`}
                             aria-pressed={d.lan ?? false}
                           >
-                            <PhoneShareIcon className="size-3.5" />
+                            {busy === `lan:${d.hostname}` ? <Spinner /> : <PhoneShareIcon className="size-3.5" />}
                           </Button>
                         )}
                         <Button size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" onClick={openSettings} title="Settings" aria-label={`Settings for ${d?.hostname ?? p?.name}`}>
