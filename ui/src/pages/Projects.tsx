@@ -770,19 +770,17 @@ export function ProjectsPage({ onNavigate }: { onNavigate: (page: Page) => void 
       header={
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Projects</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage your project directories, organize them by project type, open them in your preferred code editors or terminal, and link them to local sites.
-        </p>
+        <p className="text-sm text-muted-foreground">Your project folders: open them in an editor or terminal and link them to local sites.</p>
       </div>
 
       }
       toolbar={
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={handleAddProjectFolder} className="cursor-pointer gap-2">
+        <Button size="sm" onClick={handleAddProjectFolder} className="cursor-pointer gap-2">
           <FolderPlus className="size-4" /> Add project folder
         </Button>
         <GitCloneButton defaultParent={effectiveParent} onDone={() => void refreshAll()} standalone={true} />
-        <Button variant="secondary" onClick={() => setReclaimOpen(true)} className="cursor-pointer gap-2" title="Free up space">
+        <Button size="sm" variant="secondary" onClick={() => setReclaimOpen(true)} className="cursor-pointer gap-2" title="Free up space: delete rebuildable folders (node_modules, vendor, caches) in projects you have not used for a while">
           <Eraser className="size-4" /> <span className="hidden sm:inline">Free up space</span>
         </Button>
         <div className="ml-auto">

@@ -1,37 +1,49 @@
-import { FolderOpen, FolderTree } from 'lucide-react'
+import { Check, FolderOpen, FolderTree, ListFilter } from 'lucide-react'
+import { useState } from 'react'
 
 import { MiddleTruncate } from '@/components/ui/MiddleTruncate'
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/select'
+import { FloatingMenu, type MenuAnchor, type MenuItem } from '@/components/ui/menu'
 import { TableRow, TableSpanCell } from '@/components/ui/table'
-import { PROXY_ROOT, type ListSort, type ListView } from '@/lib/rootFolder'
+import { PROXY_ROOT, type ListView } from '@/lib/rootFolder'
 
-/** "Group by root folder" toggle and a sort choice, shared by the Projects and Sites tables. */
+/**
+ * One "View" button for the Projects and Sites tables: group rows by root folder, and the
+ * sort order. A menu instead of a toggle plus a drop-down keeps the toolbar on one line.
+ */
 export function RootFolderControls({ view, onChange }: { view: ListView; onChange: (next: ListView) => void }) {
+  const [anchor, setAnchor] = useState<MenuAnchor | null>(null)
+  const items: MenuItem[] = [
+    {
+      label: 'Group by root folder',
+      icon: view.group ? <Check /> : <FolderTree />,
+      hint: 'Put rows that live in the same parent folder under one heading',
+      // Ungrouping goes back to sorting by name; grouping sorts by root folder by itself.
+      onSelect: () => onChange({ ...view, group: !view.group, sort: view.group ? 'name' : view.sort }),
+    },
+    'separator',
+    { label: 'Sort by name', icon: !view.group && view.sort === 'name' ? <Check /> : undefined, disabled: view.group, hint: view.group ? 'Grouping sorts by root folder' : undefined, onSelect: () => onChange({ ...view, sort: 'name' }) },
+    { label: 'Sort by root folder', icon: view.group || view.sort === 'root' ? <Check /> : undefined, disabled: view.group, onSelect: () => onChange({ ...view, sort: 'root' }) },
+  ]
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <>
       <Button
         type="button"
         size="sm"
-        variant={view.group ? 'secondary' : 'outline'}
-        className="h-8 cursor-pointer gap-1.5"
-        aria-pressed={view.group}
-        onClick={() => onChange({ ...view, group: !view.group })}
-        title="Put rows that live in the same parent folder under one heading, even when you added them by hand"
+        variant="outline"
+        className={`h-8 cursor-pointer gap-1.5 ${anchor ? 'bg-accent' : ''}`}
+        aria-haspopup="menu"
+        title="Group and sort the list"
+        onClick={(e) => {
+          const el = e.currentTarget
+          setAnchor(anchor ? null : { type: 'button', rect: el.getBoundingClientRect(), element: el })
+        }}
       >
-        <FolderTree className="size-4" /> Group by root folder
+        <ListFilter className="size-4" /> View
+        {view.group && <span className="rounded-full bg-primary/15 px-1.5 text-[11px] text-primary">grouped</span>}
       </Button>
-      <Select
-        aria-label="Sort the list"
-        className="h-8 w-44"
-        value={view.group ? 'root' : view.sort}
-        disabled={view.group}
-        onChange={(e) => onChange({ ...view, sort: e.target.value as ListSort })}
-      >
-        <option value="name">Sort: Name</option>
-        <option value="root">Sort: Root folder</option>
-      </Select>
-    </div>
+      {anchor && <FloatingMenu anchor={anchor} placement="bottom-end" items={items} onClose={() => setAnchor(null)} />}
+    </>
   )
 }
 
