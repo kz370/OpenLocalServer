@@ -1,5 +1,5 @@
-import { Eye, EyeOff, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { Eye, EyeOff, FolderOpen, Info, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
 import { SecurityDetailsDialog } from '@/components/SecurityDetailsDialog'
@@ -7,7 +7,8 @@ import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
+import { Tooltip } from '@/components/ui/tooltip'
 import { type AuditResult, type Diagnostic, type EolItem, type ProjectDetail, runCommand } from '@/core'
 import { asDiagnostic } from '@/lib/diagnostic'
 import { eolLabel, timeAgo } from '@/lib/hooks'
@@ -175,6 +176,7 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
   const [taskId, setTaskId] = useState<string | null>(null)
   const [error, setError] = useState<Diagnostic | null>(null)
   const [showDetails, setShowDetails] = useState(false)
+  const [detailFilter, setDetailFilter] = useState<'critical' | 'high' | 'eol' | null>(null)
   const [projectNames, setProjectNames] = useState<Record<string, string>>({})
   const { ignored, setHidden, setManyHidden, showAll } = useIgnoredSecurity()
 
@@ -202,7 +204,10 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
     const fresh = await load()
     if (fresh.some((r) => r.tools.some((t) => t.findings.length > 0))) {
       setTaskId(null)
+      setDetailFilter(null)
       setShowDetails(true)
+    } else {
+      setTaskId(null)
     }
   }, [load])
   useEffect(() => {
@@ -218,36 +223,42 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
     0,
   )
   const hidden = allEnded.length - ended.length + hiddenFindings
+  const dialogResults = useMemo(() => {
+    if (detailFilter === 'eol') return []
+    if (detailFilter === 'critical' || detailFilter === 'high') {
+      return results
+        .map((r) => ({
+          ...r,
+          tools: r.tools
+            .map((t) => ({
+              ...t,
+              findings: t.findings.filter((f) => f.severity === detailFilter),
+            }))
+            .filter((t) => t.findings.length > 0),
+        }))
+        .filter((r) => r.tools.length > 0)
+    }
+    return results
+  }, [results, detailFilter])
+
+  const dialogEol = useMemo(() => {
+    if (detailFilter === 'critical' || detailFilter === 'high') return []
+    return eol
+  }, [eol, detailFilter])
+
   if (results.length === 0 && allEnded.length === 0) return null
 
-  const checkAll = (
-    <Button
-      size="sm"
-      variant="secondary"
-      className="cursor-pointer"
-      onClick={() =>
-        void runCommand({ type: 'audit_all_projects' })
-          .then((r) => {
-            if (r.type === 'task_started') setTaskId(r.id)
-          })
-          .catch((err) => setError(asDiagnostic(err)))
-      }
-    >
-      Check all projects
-    </Button>
-  )
-  const anyFindings = results.some((r) => r.tools.some((t) => t.findings.length > 0))
-  const detailsButton = (anyFindings || allEnded.length > 0) && (
-    <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => setShowDetails(true)}>
-      View details
-    </Button>
-  )
+  const isChecking = taskId !== null
+
   const detailsDialog = (
     <SecurityDetailsDialog
       open={showDetails}
-      onClose={() => setShowDetails(false)}
-      results={results}
-      eol={eol}
+      onClose={() => {
+        setShowDetails(false)
+        setDetailFilter(null)
+      }}
+      results={dialogResults}
+      eol={dialogEol}
       projectNames={projectNames}
       ignored={ignored}
       setHidden={setHidden}
@@ -255,78 +266,144 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
       onError={(e) => setError(asDiagnostic(e))}
     />
   )
-  const hiddenButton = hidden > 0 && (
-    <Button size="sm" variant="ghost" className="cursor-pointer" title="Show the hidden security items again" onClick={showAll}>
-      <Eye /> {hidden} hidden
-    </Button>
-  )
 
-  // Nothing needs attention: one slim row instead of a full card.
-  if (critical === 0 && high === 0 && ended.length === 0) {
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border px-3 py-1.5 text-sm shadow-xs">
-        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
-        <span className="flex items-center gap-2 text-muted-foreground">
-          <ShieldCheck className="size-4 text-emerald-500" /> Security: nothing to fix
-        </span>
-        <span className="flex gap-2">
-          {hiddenButton}
-          {detailsButton}
-          {checkAll}
-        </span>
-        {detailsDialog}
-        <TaskOutputDialog taskId={taskId} onClose={() => setTaskId(null)} onFinished={() => void checkFinished()} />
-      </div>
-    )
-  }
+  const hasIssues = critical > 0 || high > 0 || ended.length > 0
 
   return (
-    <Card className="shadow-xs">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <ShieldAlert className="size-4" /> Security
-        </CardTitle>
-        <CardDescription>Known package problems and versions that no longer get security fixes.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-wrap items-center justify-between gap-3 text-sm">
-        <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
-        <span className="flex flex-wrap items-center gap-2">
+    <Card className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 min-h-[48px] shadow-xs">
+      <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
+
+      {/* Left group: Title + Chips */}
+      <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {hasIssues ? (
+            <ShieldAlert className="size-4 text-warning" />
+          ) : (
+            <ShieldCheck className="size-4 text-success" />
+          )}
+          <span className="text-sm font-medium">Security</span>
+          <Tooltip content="Known package problems and versions that no longer get security fixes.">
+            <span
+              tabIndex={0}
+              role="img"
+              aria-label="Known package problems and versions that no longer get security fixes."
+              title="Known package problems and versions that no longer get security fixes."
+              className="inline-flex cursor-help text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Info className="size-3.5" />
+            </span>
+          </Tooltip>
+        </div>
+
+        {/* Severity & EOL chips */}
+        <div className="flex flex-wrap items-center gap-1.5">
           {results.length > 0 && (
             <>
-              <button type="button" className="cursor-pointer" title="See the details" onClick={() => setShowDetails(true)}>
-                <Badge variant={critical > 0 ? 'destructive' : 'secondary'}>{critical} critical</Badge>
+              <button
+                type="button"
+                className="cursor-pointer transition-transform active:scale-95 hover:opacity-85 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-full"
+                title="Filter details to critical findings"
+                onClick={() => {
+                  setDetailFilter('critical')
+                  setShowDetails(true)
+                }}
+              >
+                <Badge variant={critical > 0 ? 'destructive' : 'secondary'} className="h-6 text-xs gap-1.5 px-2 font-medium">
+                  {critical} critical
+                </Badge>
               </button>
-              <button type="button" className="cursor-pointer" title="See the details" onClick={() => setShowDetails(true)}>
-                <Badge variant={high > 0 ? 'destructive' : 'secondary'}>{high} high</Badge>
+              <button
+                type="button"
+                className="cursor-pointer transition-transform active:scale-95 hover:opacity-85 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-full"
+                title="Filter details to high findings"
+                onClick={() => {
+                  setDetailFilter('high')
+                  setShowDetails(true)
+                }}
+              >
+                <Badge variant={high > 0 ? 'destructive' : 'secondary'} className="h-6 text-xs gap-1.5 px-2 font-medium">
+                  {high} high
+                </Badge>
               </button>
             </>
           )}
           {ended.map((i) => (
-            <Badge key={`${i.runtime}:${i.version}`} variant="warning" className="gap-1.5">
-              {i.runtime} {i.version} ended
+            <Badge
+              key={`${i.runtime}:${i.version}`}
+              variant="warning"
+              className="h-6 text-xs gap-1.5 px-2 font-medium cursor-pointer transition-transform active:scale-95 hover:opacity-85"
+              title="Filter details to end-of-life runtimes"
+              onClick={() => {
+                setDetailFilter('eol')
+                setShowDetails(true)
+              }}
+            >
+              <span>{i.runtime} {i.version} ended</span>
               <button
                 type="button"
-                className="cursor-pointer opacity-70 hover:opacity-100"
+                className="cursor-pointer opacity-70 hover:opacity-100 transition-opacity ml-0.5"
                 title={`Hide this warning for ${i.runtime} ${i.version}`}
                 aria-label={`Hide the ${i.runtime} ${i.version} warning`}
-                onClick={() => setHidden(eolKey(i.runtime, i.version), true)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setHidden(eolKey(i.runtime, i.version), true)
+                }}
               >
                 <EyeOff className="size-3" />
               </button>
             </Badge>
           ))}
-        </span>
-        <span className="flex gap-2">
-          {hiddenButton}
-          {detailsButton}
-          {onOpenProjects && (
-            <Button size="sm" variant="ghost" onClick={onOpenProjects}>
-              Open projects
-            </Button>
+        </div>
+      </div>
+
+      {/* Right group: Actions */}
+      <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+        {hidden > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+            title="Show the hidden security items again"
+            onClick={showAll}
+          >
+            <Eye className="size-3.5" /> {hidden} hidden
+          </Button>
+        )}
+        {onOpenProjects && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2.5 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+            onClick={onOpenProjects}
+          >
+            <FolderOpen className="size-3.5" /> Open projects
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2.5 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer w-[148px] justify-center"
+          disabled={isChecking}
+          onClick={() =>
+            void runCommand({ type: 'audit_all_projects' })
+              .then((r) => {
+                if (r.type === 'task_started') setTaskId(r.id)
+              })
+              .catch((err) => setError(asDiagnostic(err)))
+          }
+        >
+          {isChecking ? (
+            <>
+              <Spinner className="size-3.5 animate-spin" /> Checking…
+            </>
+          ) : (
+            <>
+              <RefreshCw className="size-3.5" /> Check all projects
+            </>
           )}
-          {checkAll}
-        </span>
-      </CardContent>
+        </Button>
+      </div>
+
       {detailsDialog}
       <TaskOutputDialog taskId={taskId} onClose={() => setTaskId(null)} onFinished={() => void checkFinished()} />
     </Card>
