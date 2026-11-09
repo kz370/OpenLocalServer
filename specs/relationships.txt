@@ -354,7 +354,7 @@ Sidebar | reads | navItems (NAV_GROUPS, LOCKED_NAV_ITEMS) and useHiddenSidebarIt
 Settings page | mounts | SidebarItemsSettings as its own "Sidebar" section (after Appearance)
 Settings page | mounts | SettingsNav (SettingsSearch, SectionTabs, OnThisPage) for grouped sidebar, search, tabs and in-page chips
 SettingsSearch | calls | jumpToSetting -> scrolls to the matching setting row
-Settings page | passes | OnThisPage to PageLayout toolbar (non-scrolling) when usePageHeadings finds 3+ card titles
+Settings page | renders | OnThisPage above its own page scroller (non-scrolling, nav rail unaffected) when usePageHeadings finds 3+ card titles
 SystemCard (ReleaseCards) | sets | data-toc-label="System" so the On this page chip is short
 SidebarItemsSettings | calls | setHiddenSidebarItems -> set_setting ui.sidebar.hidden
 sidebarVisibility | calls | get_setting ui.sidebar.hidden (once per session)

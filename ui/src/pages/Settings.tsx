@@ -790,32 +790,29 @@ export function SettingsPage() {
 
   return (
     <PageLayout
-      mode="scroll"
+      mode="fill"
       header={
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
+      // Narrow windows: the icon rail has no room for search, so it sits beside the title.
+      <div className="@container relative z-20">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+            <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
+          </div>
+          <SettingsSearch onPick={pickSearchResult} floating className="mt-1 flex w-64 min-w-0 @4xl:hidden" />
+        </div>
       </div>
       }
-      toolbar={pageHeadings.length >= 3 ? (
-        // Same columns as the content below (nav rail + page), so the bar lines up with the cards.
-        <div className="@container">
-          <div className="flex flex-row gap-4 @4xl:gap-6">
-            <div aria-hidden className="w-20 shrink-0 @4xl:w-56" />
-            <div className="min-w-0 max-w-3xl flex-1">
-              <OnThisPage root={contentRef} labels={pageHeadings} />
-            </div>
-          </div>
-        </div>
-      ) : undefined}
     >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
-      <div className="@container">
-      <div className="flex flex-row items-start gap-4 @4xl:gap-6">
-        <nav className="sticky top-0 flex w-20 shrink-0 flex-col gap-1 @4xl:w-56 max-h-[calc(100vh-10rem)] ols-scroll-thin overscroll-contain overflow-y-auto overflow-x-hidden pr-1.5" aria-label="Settings sections">
-          <SettingsSearch onPick={pickSearchResult} />
+      {/* The nav rail is its own full-height column, so the "On this page" bar (shown only on
+          long pages) sits above the page column and never pushes the rail down. */}
+      <div className="@container flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-row gap-4 @4xl:gap-6">
+        <nav className="flex min-h-0 w-20 shrink-0 flex-col gap-1 @4xl:w-56 ols-scroll-thin overscroll-contain overflow-y-auto overflow-x-hidden pr-1.5" aria-label="Settings sections">
+          <SettingsSearch onPick={pickSearchResult} className="hidden @4xl:flex" />
           {NAV_GROUPS.map((group, gi) => (
             <div key={group.label} className="flex flex-col gap-1">
               {gi > 0 && <div className="mx-2 mt-1 h-px bg-border @4xl:hidden" />}
@@ -851,7 +848,14 @@ export function SettingsPage() {
           ))}
         </nav>
 
-        <div ref={contentRef} className="flex min-w-0 max-w-3xl flex-1 flex-col gap-5">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+        {pageHeadings.length >= 3 && (
+          <div className="max-w-3xl shrink-0">
+            <OnThisPage root={contentRef} labels={pageHeadings} />
+          </div>
+        )}
+        <div className="ols-scroll min-h-0 flex-1">
+        <div ref={contentRef} className="flex min-w-0 max-w-3xl flex-col gap-5">
           {activeNavItem && <SectionTabs item={activeNavItem} section={section} onChange={changeSection} />}
           {section === 'appearance' && <AppearanceSettings />}
           {section === 'sidebar' && <SidebarItemsSettings />}
@@ -1285,6 +1289,8 @@ export function SettingsPage() {
             </Card>
           )}
 
+        </div>
+        </div>
         </div>
       </div>
       </div>
