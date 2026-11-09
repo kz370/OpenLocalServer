@@ -109,7 +109,13 @@ function ToastItem({
   useEffect(() => {
     const handleBlur = () => {
       setWindowFocused(false)
+      setIsHovered(false)
       clearTimer()
+    }
+    // Toasts sit at the window edge: leaving the window across one can skip its mouseleave,
+    // which left the toast paused (hovered) forever. Clear hover when the pointer leaves.
+    const handleWindowOut = (e: MouseEvent) => {
+      if (!e.relatedTarget) setIsHovered(false)
     }
     const handleFocus = () => {
       setWindowFocused(true)
@@ -121,9 +127,11 @@ function ToastItem({
 
     window.addEventListener('blur', handleBlur)
     window.addEventListener('focus', handleFocus)
+    document.addEventListener('mouseout', handleWindowOut)
     return () => {
       window.removeEventListener('blur', handleBlur)
       window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('mouseout', handleWindowOut)
     }
   }, [clearTimer, item.duration, startTimer])
 
@@ -191,8 +199,12 @@ function ToastItem({
       tabIndex={0}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onFocus={() => setIsFocused(true)}
-      onBlur={() => setIsFocused(false)}
+      // Only keyboard focus pauses: a mouse click (Copy, Details) leaves focus parked on the
+      // toast, which used to pause it until the user happened to click somewhere else.
+      onFocus={(e) => setIsFocused(e.target.matches(':focus-visible'))}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsFocused(false)
+      }}
       className={cn(
         'pointer-events-auto relative flex flex-col gap-2 rounded-xl border p-3.5 shadow-xl transition-all duration-200 outline-none',
         'bg-card/95 backdrop-blur-xl text-card-foreground',
