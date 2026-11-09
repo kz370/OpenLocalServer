@@ -137,16 +137,52 @@ impl Core {
 
     /// Dispatches a `CoreCommand` and converts any error into a user diagnostic.
     pub fn dispatch(&self, command: CoreCommand) -> Result<CoreResponse, Diagnostic> {
-        use crate::service::ServiceState;
+        use crate::service::{DesiredState, ServiceState};
 
         let services = self.services();
-        // §179: a manual start, stop or restart wins over "sleep when unused": its wake
-        // listener must free the port before the service is touched.
+        // Update per-service desired_state and release idle sleeps on explicit commands
         match &command {
-            CoreCommand::StartService { id }
-            | CoreCommand::StopService { id }
-            | CoreCommand::RestartService { id } => self.inner.idle.release(id),
-            CoreCommand::StopAll => self.inner.idle.release_all(),
+            CoreCommand::StartService { id } => {
+                self.inner.idle.release(id);
+                let canonical_id = if id == "web" {
+                    self.inner().web_config().default_server
+                } else {
+                    id.clone()
+                };
+                services.set_desired_state(&canonical_id, DesiredState::Running);
+            }
+            CoreCommand::RestartService { id } => {
+                self.inner.idle.release(id);
+                let canonical_id = if id == "web" {
+                    self.inner().web_config().default_server
+                } else {
+                    id.clone()
+                };
+                services.set_desired_state(&canonical_id, DesiredState::Running);
+            }
+            CoreCommand::StopService { id } => {
+                self.inner.idle.release(id);
+                let canonical_id = if id == "web" {
+                    self.inner().web_config().default_server
+                } else {
+                    id.clone()
+                };
+                services.set_desired_state(&canonical_id, DesiredState::Stopped);
+            }
+            CoreCommand::StopWeb => {
+                for sid in crate::web::SERVER_IDS {
+                    services.set_desired_state(sid, DesiredState::Stopped);
+                }
+            }
+            CoreCommand::StopAll => {
+                self.inner.idle.release_all();
+                services.set_all_desired_states(DesiredState::Stopped);
+            }
+            CoreCommand::StopProcess { id } => {
+                if let Some(service_id) = services.service_id_for_process(*id) {
+                    services.set_desired_state(&service_id, DesiredState::Stopped);
+                }
+            }
             _ => {}
         }
         let transitions = match &command {
@@ -212,7 +248,11 @@ impl Core {
                     .list()
                     .into_iter()
                     .filter(|service| {
-                        service.kind == "web" && (service.running || service.id == default_server)
+                        service.kind == "web"
+                            && (service.running
+                                || (service.id == default_server
+                                    && services.desired_state(&service.id)
+                                        == DesiredState::Running))
                     })
                     .map(|service| service.id)
                     .collect::<Vec<_>>();

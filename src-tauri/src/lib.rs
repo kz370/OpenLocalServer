@@ -2004,9 +2004,14 @@ pub fn run() {
                             .get_webview_window("main")
                             .and_then(|w| w.is_visible().ok())
                             .unwrap_or(false);
+                        let service_id = process_core.services().service_id_for_process(*id);
+                        let desired_stopped = service_id.as_deref().map(|sid| {
+                            process_core.services().desired_state(sid) == ols_core::service::DesiredState::Stopped
+                        }).unwrap_or(false);
                         if !SHUTDOWN_IN_PROGRESS.load(Ordering::Relaxed)
                             && !TRAY_OPERATION_IN_PROGRESS.load(Ordering::Relaxed)
                             && !window_visible
+                            && !desired_stopped
                         {
                             let name = process_core
                                 .supervisor()

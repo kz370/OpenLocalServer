@@ -170,6 +170,8 @@ pub fn web_ready_timeout(server_id: &str) -> Duration {
     }
 }
 
+pub type DesiredStateFn = Arc<dyn Fn(&str) -> crate::service::DesiredState + Send + Sync>;
+
 pub struct WebManager {
     paths: AppPaths,
     runtimes: Arc<RuntimeManager>,
@@ -185,6 +187,7 @@ pub struct WebManager {
     /// limit is applied by wrapping the server in the `cpulimit` utility, which is why it
     /// has to happen here at spawn time rather than being another command-line flag.
     limits: Mutex<crate::resources::ResourceLimits>,
+    desired_state_fn: Mutex<Option<DesiredStateFn>>,
 }
 
 fn sha_hex(text: &str) -> String {
@@ -278,6 +281,19 @@ impl WebManager {
             server_locks: Mutex::new(HashMap::new()),
             in_flight_starts: Mutex::new(HashMap::new()),
             limits: Mutex::new(Default::default()),
+            desired_state_fn: Mutex::new(None),
+        }
+    }
+
+    pub fn attach_desired_state(&self, f: DesiredStateFn) {
+        *self.desired_state_fn.lock().unwrap() = Some(f);
+    }
+
+    pub fn desired_state(&self, id: &str) -> crate::service::DesiredState {
+        if let Some(f) = self.desired_state_fn.lock().unwrap().as_ref() {
+            f(id)
+        } else {
+            crate::service::DesiredState::Running
         }
     }
 
@@ -939,13 +955,22 @@ impl WebManager {
 
         // 5. Start (or gracefully reload). A server with no sites of its own opens no
         // listener, so it is not waited on by port — only checked for staying alive.
-        self.start_or_reload(
-            server.as_ref(),
-            &layout,
-            ports,
-            !enabled.is_empty(),
-            &mut report,
-        )?;
+        // If the server is stopped and its desired state is Stopped, we do not start it.
+        let is_alive = self.is_running_id(server.id());
+        if is_alive || self.desired_state(server.id()) == crate::service::DesiredState::Running {
+            self.start_or_reload(
+                server.as_ref(),
+                &layout,
+                ports,
+                !enabled.is_empty(),
+                &mut report,
+            )?;
+        } else {
+            tracing::info!(
+                server = server.id(),
+                "skipping web server start_or_reload: server is stopped and desired state is stopped"
+            );
+        }
 
         Ok(report)
     }

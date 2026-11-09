@@ -174,7 +174,16 @@ impl Inner {
         }
 
         let web = self.web.status(&cfg, &self.domains.lock().unwrap().list());
-        if !web.running && enabled > 0 {
+        let server_id = cfg.server();
+        let desired = self.services.desired_state(server_id);
+        let transitioning = self.services.is_transitioning(server_id);
+        let settling = self.services.is_startup_settling(server_id);
+        if desired == crate::service::DesiredState::Running
+            && !web.running
+            && !transitioning
+            && !settling
+            && enabled > 0
+        {
             b.add(
                 "web_stopped",
                 Severity::Warning,

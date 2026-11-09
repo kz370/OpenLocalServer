@@ -144,6 +144,7 @@ impl Inner {
                 tracing::warn!(tunnel = %t.config.name, error = %e, "autostart: named Cloudflare tunnel did not start");
             }
         }
+        self.services.finish_startup_settling();
     }
 }
 

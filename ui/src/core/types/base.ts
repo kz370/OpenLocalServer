@@ -352,6 +352,7 @@ export interface ReclaimItem {
 export type PortStatusLite = 'free' | 'in_use'
 
 export type ServiceLifecycleState = 'starting' | 'stopping' | 'restarting' | 'running' | 'stopped' | 'error'
+export type DesiredState = 'running' | 'stopped'
 
 export interface ServiceStatus {
   id: string
@@ -359,6 +360,7 @@ export interface ServiceStatus {
   installed: boolean
   running: boolean
   state: ServiceLifecycleState
+  desired_state?: DesiredState
   port: number | null
   port_status: PortStatusLite | null
   kind: string

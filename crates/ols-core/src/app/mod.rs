@@ -354,6 +354,11 @@ impl Inner {
         core.services.set_limits(core.resource_limits());
         core.web.set_limits(core.resource_limits());
         {
+            let services = Arc::clone(&core.services);
+            core.web
+                .attach_desired_state(Arc::new(move |id: &str| services.desired_state(id)));
+        }
+        {
             // The Services page shows the web servers too, but they keep running through
             // `WebManager` — this only hands it over for listing and probing.
             let for_config = Arc::clone(&core);
@@ -380,6 +385,12 @@ impl Inner {
         // Sharing on the network never outlives a run: after a crash or a kill it is still
         // saved as on, so it is cleared here before any web server starts.
         crate::lan::stop_all(&core, false);
+        {
+            let startup = core.startup_settings();
+            let default_web = core.web_config().default_server;
+            core.services
+                .init_desired_states(&startup.autostart_services, &default_web);
+        }
         Ok(core)
     }
 

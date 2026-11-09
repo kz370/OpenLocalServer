@@ -391,3 +391,204 @@ fn env_files_round_trip_through_the_core_and_keep_a_backup() {
     );
     assert_eq!(v.content, "APP_ENV=example\n");
 }
+
+#[test]
+fn manual_stop_produces_no_finding() {
+    let (core, home) = test_core();
+    let server_id = core.inner().web_config().default_server;
+    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
+    std::fs::create_dir_all(&version_dir).unwrap();
+
+    core.inner()
+        .domains
+        .lock()
+        .unwrap()
+        .add(Domain {
+            hostname: "manual-stop.test".into(),
+            enabled: true,
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Explicit manual stop command
+    core.dispatch(CoreCommand::StopService {
+        id: server_id.clone(),
+    })
+    .unwrap();
+
+    assert_eq!(
+        core.inner().services.desired_state(&server_id),
+        crate::service::DesiredState::Stopped
+    );
+    let findings = core.inner().diagnose();
+    assert!(
+        !findings.iter().any(|f| f.id == "web_stopped"),
+        "manual stop should not produce web_stopped finding: {findings:?}"
+    );
+}
+
+#[test]
+fn crash_produces_finding() {
+    let (core, home) = test_core();
+    let server_id = core.inner().web_config().default_server;
+    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
+    std::fs::create_dir_all(&version_dir).unwrap();
+
+    core.inner()
+        .domains
+        .lock()
+        .unwrap()
+        .add(Domain {
+            hostname: "crash.test".into(),
+            enabled: true,
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Desired state is Running (e.g. from prior start or autostart), but process is dead
+    core.inner()
+        .services
+        .set_desired_state(&server_id, crate::service::DesiredState::Running);
+    core.inner().services.finish_startup_settling();
+
+    assert_eq!(
+        core.inner().services.desired_state(&server_id),
+        crate::service::DesiredState::Running
+    );
+    assert!(!core.inner().services.is_running(&server_id));
+
+    let findings = core.inner().diagnose();
+    assert!(
+        findings.iter().any(|f| f.id == "web_stopped"),
+        "crashed/unexpectedly stopped service with desired_state=Running must produce web_stopped finding"
+    );
+}
+
+#[test]
+fn startup_settle_produces_no_finding_while_starting() {
+    let (core, home) = test_core();
+    let server_id = core.inner().web_config().default_server;
+    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
+    std::fs::create_dir_all(&version_dir).unwrap();
+
+    core.inner()
+        .domains
+        .lock()
+        .unwrap()
+        .add(Domain {
+            hostname: "settle.test".into(),
+            enabled: true,
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Initialize desired states as if app started with web in autostart
+    core.inner()
+        .services
+        .init_desired_states(std::slice::from_ref(&server_id), &server_id);
+    assert!(core.inner().services.is_startup_settling(&server_id));
+    assert_eq!(
+        core.inner().services.desired_state(&server_id),
+        crate::service::DesiredState::Running
+    );
+
+    // While settling, diagnose should produce NO web_stopped finding
+    let findings = core.inner().diagnose();
+    assert!(
+        !findings.iter().any(|f| f.id == "web_stopped"),
+        "startup settling must suppress web_stopped finding: {findings:?}"
+    );
+
+    // Once startup sequence finishes:
+    core.inner().services.finish_startup_settling();
+    assert!(!core.inner().services.is_startup_settling(&server_id));
+
+    // Now that settling is over, if service is still down, finding appears!
+    let findings_after = core.inner().diagnose();
+    assert!(
+        findings_after.iter().any(|f| f.id == "web_stopped"),
+        "after startup settling finishes, down service must be reported"
+    );
+}
+
+#[test]
+fn tray_and_cli_stop_produces_no_finding() {
+    let (core, home) = test_core();
+    let server_id = core.inner().web_config().default_server;
+    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
+    std::fs::create_dir_all(&version_dir).unwrap();
+
+    core.inner()
+        .domains
+        .lock()
+        .unwrap()
+        .add(Domain {
+            hostname: "tray-stop.test".into(),
+            enabled: true,
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Set desired state to Running first
+    core.inner()
+        .services
+        .set_desired_state(&server_id, crate::service::DesiredState::Running);
+
+    // Front door: StopWeb (dispatched by tray menu "Stop web server")
+    core.dispatch(CoreCommand::StopWeb).unwrap();
+
+    assert_eq!(
+        core.inner().services.desired_state(&server_id),
+        crate::service::DesiredState::Stopped
+    );
+    let findings = core.inner().diagnose();
+    assert!(
+        !findings.iter().any(|f| f.id == "web_stopped"),
+        "StopWeb must leave desired_state=Stopped and produce no web_stopped finding"
+    );
+
+    // Front door: StopAll (dispatched by tray or CLI `ols stop --all`)
+    core.inner()
+        .services
+        .set_desired_state(&server_id, crate::service::DesiredState::Running);
+    core.dispatch(CoreCommand::StopAll).unwrap();
+
+    assert_eq!(
+        core.inner().services.desired_state(&server_id),
+        crate::service::DesiredState::Stopped
+    );
+    let findings2 = core.inner().diagnose();
+    assert!(
+        !findings2.iter().any(|f| f.id == "web_stopped"),
+        "StopAll must leave desired_state=Stopped and produce no web_stopped finding"
+    );
+}
+
+#[test]
+fn apply_web_never_starts_stopped_desired_state_service() {
+    let (core, home) = test_core();
+    let server_id = core.inner().web_config().default_server;
+    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
+    std::fs::create_dir_all(&version_dir).unwrap();
+
+    // Service desired state is Stopped
+    core.dispatch(CoreCommand::StopService {
+        id: server_id.clone(),
+    })
+    .unwrap();
+    assert_eq!(
+        core.inner().services.desired_state(&server_id),
+        crate::service::DesiredState::Stopped
+    );
+
+    // Run ApplyWeb ("Apply the web configuration" / "Fix all")
+    let _ = core.dispatch(CoreCommand::ApplyWeb { overwrite: vec![] });
+    assert_eq!(
+        core.inner().services.desired_state(&server_id),
+        crate::service::DesiredState::Stopped
+    );
+    assert!(
+        !core.inner().services.is_running(&server_id),
+        "ApplyWeb must never start a service whose desired_state is Stopped"
+    );
+}

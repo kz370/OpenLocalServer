@@ -1206,7 +1206,11 @@ function updateFromServicesList(services: ServiceStatus[], webData?: DashboardDa
       currentlyRunningServices.delete(s.id)
       currentlyHealthyRunningServices.delete(s.id)
 
-      if (intent.expected === 'stopped') {
+      if (s.desired_state === 'stopped') {
+        intent.expected = 'stopped'
+        intent.exitObserved = true
+        pendingUnexpectedExits.delete(s.id)
+      } else if (intent.expected === 'stopped') {
         // Normal expected stop: record that exit has been observed, do NOT notify.
         intent.exitObserved = true
       } else if (intent.expected === 'restarting') {
@@ -2106,6 +2110,10 @@ export function initDiagnosticsNotificationMonitor() {
       const r = event.payload
       if (r.ok) notify.success(`Fixed: ${r.problem}`)
       else notify.error(`Automatic fix failed: ${r.problem}`, { details: r.detail })
+      requestDiagnosticsRescan()
+    })
+
+    void listen('service-status-event', () => {
       requestDiagnosticsRescan()
     })
 

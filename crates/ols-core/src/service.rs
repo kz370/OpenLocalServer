@@ -71,6 +71,14 @@ pub enum ServiceState {
     Error,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DesiredState {
+    Running,
+    #[default]
+    Stopped,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceStateChange {
     pub id: String,
@@ -165,6 +173,8 @@ pub struct ServiceStatus {
     pub running: bool,
     #[serde(default)]
     pub state: ServiceState,
+    #[serde(default)]
+    pub desired_state: DesiredState,
     pub port: Option<u16>,
     pub port_status: Option<PortStatusLite>,
     /// "mail" | "sql" | "document" — what kind of thing this is.
@@ -241,6 +251,10 @@ pub struct ServiceManager {
     op_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     /// In-flight start operations per service ID so overlapping start requests join the first one.
     in_flight_starts: Mutex<HashMap<String, InFlightServiceStart>>,
+    /// Desired running/stopped state per service ID, changing only through explicit start/stop commands.
+    desired_states: Mutex<HashMap<String, DesiredState>>,
+    /// Services that are autostarting and settling during app launch, suppressing stopped-service findings.
+    startup_settling: Mutex<HashMap<String, Instant>>,
 }
 
 /// Settings are read fresh on every call, so the web rows always show current ports.
@@ -311,11 +325,83 @@ impl ServiceManager {
             web: Mutex::new(None),
             op_locks: Mutex::new(HashMap::new()),
             in_flight_starts: Mutex::new(HashMap::new()),
+            desired_states: Mutex::new(HashMap::new()),
+            startup_settling: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn subscribe_status_events(&self) -> broadcast::Receiver<ServiceStateEvent> {
         self.status_events.subscribe()
+    }
+
+    pub fn is_transitioning(&self, id: &str) -> bool {
+        self.transitions.lock().unwrap().contains_key(id)
+    }
+
+    pub fn desired_state(&self, id: &str) -> DesiredState {
+        self.desired_states
+            .lock()
+            .unwrap()
+            .get(id)
+            .copied()
+            .unwrap_or(DesiredState::Stopped)
+    }
+
+    pub fn set_desired_state(&self, id: &str, state: DesiredState) {
+        self.startup_settling.lock().unwrap().remove(id);
+        self.desired_states
+            .lock()
+            .unwrap()
+            .insert(id.to_string(), state);
+    }
+
+    pub fn set_all_desired_states(&self, state: DesiredState) {
+        self.startup_settling.lock().unwrap().clear();
+        let mut states = self.desired_states.lock().unwrap();
+        for s in KNOWN_SERVICES {
+            states.insert(s.to_string(), state);
+        }
+        for w in crate::web::SERVER_IDS {
+            states.insert(w.to_string(), state);
+        }
+        for c in self.custom.lock().unwrap().list() {
+            states.insert(c.id, state);
+        }
+    }
+
+    pub fn init_desired_states(&self, autostart_services: &[String], default_web: &str) {
+        let mut states = self.desired_states.lock().unwrap();
+        let mut settling = self.startup_settling.lock().unwrap();
+        states.clear();
+        settling.clear();
+
+        let settle_deadline = Instant::now() + Duration::from_secs(30);
+
+        for id in autostart_services {
+            let canonical_id = if id == "web" {
+                default_web
+            } else {
+                id.as_str()
+            };
+            states.insert(canonical_id.to_string(), DesiredState::Running);
+            settling.insert(canonical_id.to_string(), settle_deadline);
+        }
+    }
+
+    pub fn is_startup_settling(&self, id: &str) -> bool {
+        let mut settling = self.startup_settling.lock().unwrap();
+        if let Some(deadline) = settling.get(id) {
+            if Instant::now() < *deadline {
+                return true;
+            } else {
+                settling.remove(id);
+            }
+        }
+        false
+    }
+
+    pub fn finish_startup_settling(&self) {
+        self.startup_settling.lock().unwrap().clear();
     }
 
     fn lifecycle_state(&self, id: &str, running: bool) -> ServiceState {
@@ -475,6 +561,7 @@ impl ServiceManager {
                     installed: s.installed,
                     running: s.running,
                     state: self.lifecycle_state(&id, s.running),
+                    desired_state: self.desired_state(&id),
                     port: Some(s.http_port),
                     port_status: Some(port_status),
                     kind: "web".into(),
@@ -576,6 +663,7 @@ impl ServiceManager {
             installed: std::path::Path::new(&def.executable).is_file(),
             running,
             state: self.lifecycle_state(&def.id, running),
+            desired_state: self.desired_state(&def.id),
             port: def.port,
             port_status: def.port.map(|p| {
                 if port_is_free(p) {
@@ -753,6 +841,7 @@ impl ServiceManager {
                     installed: false,
                     running: false,
                     state: self.lifecycle_state(id, false),
+                    desired_state: self.desired_state(id),
                     port: None,
                     port_status: None,
                     kind: "custom".into(),
@@ -779,6 +868,7 @@ impl ServiceManager {
             installed,
             running,
             state: self.lifecycle_state(id, running),
+            desired_state: self.desired_state(id),
             port,
             // Only free/in-use matters here, so skip the netstat/tasklist owner lookup.
             port_status: port.map(|p| {
@@ -2351,6 +2441,11 @@ mod tests {
                 ServiceState::Running
             } else {
                 ServiceState::Stopped
+            },
+            desired_state: if running {
+                DesiredState::Running
+            } else {
+                DesiredState::Stopped
             },
             port: None,
             port_status: None,

@@ -108,13 +108,27 @@ impl Inner {
                 None,
             ));
         } else if domain_count > 0 {
-            items.push(item(
-                "web_running",
-                "Web server",
-                "warn",
-                "stopped, so your sites are offline".into(),
-                Some("Apply the web config from the Domains page."),
-            ));
+            let server_id = cfg.server();
+            let desired = self.services.desired_state(server_id);
+            let transitioning = self.services.is_transitioning(server_id);
+            let settling = self.services.is_startup_settling(server_id);
+            if desired == crate::service::DesiredState::Running && !transitioning && !settling {
+                items.push(item(
+                    "web_running",
+                    "Web server",
+                    "warn",
+                    "stopped, so your sites are offline".into(),
+                    Some("Apply the web config from the Domains page."),
+                ));
+            } else {
+                items.push(item(
+                    "web_running",
+                    "Web server",
+                    "ok",
+                    "stopped".into(),
+                    None,
+                ));
+            }
         }
         for conflict in &web.port_conflicts {
             items.push(item(

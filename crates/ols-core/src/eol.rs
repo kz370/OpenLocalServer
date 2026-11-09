@@ -76,10 +76,8 @@ pub fn cycle_of(product: &str, version: &str) -> Option<String> {
         if cycles.iter().any(|c| c.cycle == prefix) {
             return Some(prefix.to_string());
         }
-        match prefix.rfind('.') {
-            Some(i) => prefix = &prefix[..i],
-            None => return None,
-        }
+        let i = prefix.rfind('.')?;
+        prefix = &prefix[..i];
     }
 }
 
