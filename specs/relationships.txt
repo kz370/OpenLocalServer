@@ -437,6 +437,8 @@ idle::tick | stops | ServiceManager::stop -> spawn_waker (127.0.0.1:<port>) -> I
 Core::dispatch | releases | IdleState::release before Start/Stop/Restart/StopAll
 Inner::sync_mdns | calls | mdns::Responder::{start, set_names} (names = shared sites' Domain.lan_local; restarted on a new LAN address; dropped when nothing is shared)
 lan::tick | calls | Inner::sync_mdns
+lan::tick / dispatch::StartService(web) | calls | lan::restore_always -> Inner::set_site_lan (sites with lan_always)
+dispatch::SetSiteLanAlways | calls | Inner::set_site_lan_always -> DomainStore::update + set_site_lan
 web::manager apply | reads | Domain.lan_local (server name) ; certs::names_for reads Domain.lan_local
 Sites row phone button | opens | PhoneShareDialog -> PhoneSection -> confirmAction -> set_site_lan
 dispatch::GetWebStatus / StopService / StopWeb / set_domain_enabled | calls | lan::reconcile / lan::stop_all

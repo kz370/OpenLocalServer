@@ -261,6 +261,7 @@ export type CoreCommand =
   | { type: 'set_site_lan'; hostname: string; on: boolean }
   | { type: 'get_lan_info'; hostname: string }
   | { type: 'set_site_lan_http'; hostname: string; http: boolean }
+  | { type: 'set_site_lan_always'; hostname: string; always: boolean }
   | { type: 'start_ca_share' }
   | { type: 'stop_ca_share' }
   | { type: 'audit_project'; project_id: string }

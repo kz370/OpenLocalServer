@@ -224,6 +224,10 @@ pub struct Domain {
     /// phone can open it by name. `None` for other domains (opened by IP and port).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lan_local: Option<String>,
+    /// Always share this site on the network: when OLS is opened again and the site's web
+    /// server is running, sharing (`lan`) is turned back on by itself. Survives a full exit.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub lan_always: bool,
     /// Dynamic DNS provider ("cloudflare", "duckdns", "custom", or None).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ddns_provider: Option<String>,
@@ -309,6 +313,7 @@ impl Default for Domain {
             lan_port: None,
             lan_http: false,
             lan_local: None,
+            lan_always: false,
             broadcast_provider: None,
             aliases: Vec::new(),
             ddns_provider: None,

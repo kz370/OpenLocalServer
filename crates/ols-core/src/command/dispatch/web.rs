@@ -29,6 +29,12 @@ impl Core {
                         info: i.set_site_lan_http(&hostname, http)?,
                     })
                 }
+                C::SetSiteLanAlways { hostname, always } => {
+                    tracing::info!(command = "set_site_lan_always", hostname = %hostname, always);
+                    Ok(R::LanInfo {
+                        info: i.set_site_lan_always(&hostname, always)?,
+                    })
+                }
                 C::StartCaShare => {
                     tracing::info!(command = "start_ca_share");
                     let (url, expires_ms) = i.start_ca_share()?;
