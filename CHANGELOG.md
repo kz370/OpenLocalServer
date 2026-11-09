@@ -5,7 +5,7 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.12.0] — Unreleased
+## [2.12.0] — 2026-11-09
 
 Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.0.md).
 

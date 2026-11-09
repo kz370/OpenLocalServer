@@ -429,7 +429,7 @@ Windows Defender scans every file that `npm install` and `composer install` writ
 
 ## 17. Version 2.12.0 Specific Notes & What's New
 
-### What's New in v2.12.0 (in development)
+### What's New in v2.12.0
 - **Migration guard:** before OLS runs a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI), it saves the project's database. **Rewind** in the toast or in the project's Backups tab puts it back. Turn it off, or set the size limit, in Settings → Databases. Commands typed into the built-in terminal are not covered.
 - **Free up space:** Projects → Free up space finds `node_modules`, `vendor` and build caches in projects you have not used for a while and deletes the ones you pick (they can be rebuilt any time). `olsc project reclaim` does the same from the command line.
 - **PHP upgrade check:** before switching a site to a newer PHP, OLS checks its Composer packages, extensions and every PHP file with the new version, then switches with one click (and back). `olsc php check-upgrade <site> <version>` does the same from the command line.
