@@ -304,7 +304,7 @@ pub fn list_results(inner: &Inner) -> Vec<AuditResult> {
         .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
         .filter_map(|e| serde_json::from_str(&std::fs::read_to_string(e.path()).ok()?).ok())
         .collect();
-    out.sort_by(|a, b| b.checked_ms.cmp(&a.checked_ms));
+    out.sort_by_key(|a| std::cmp::Reverse(a.checked_ms));
     out
 }
 

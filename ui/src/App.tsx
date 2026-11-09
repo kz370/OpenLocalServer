@@ -6,6 +6,7 @@ import { runCommand } from '@/core'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ConfirmHost } from '@/components/ConfirmHost'
 import { NotificationHost } from '@/components/NotificationHost'
+import { OverlayHosts } from '@/components/OverlayHosts'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { DoctorDialog } from '@/components/DoctorDialog'
 import { GlobalAuroraBackground } from '@/components/layout/GlobalAuroraBackground'
@@ -325,7 +326,6 @@ export default function App() {
         <div className="relative z-10 flex min-h-0 flex-1">
           <Sidebar page={page} onNavigate={navigate} />
           <ConfirmHost />
-          <NotificationHost onNavigateLogs={openLogs} />
           <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
           <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
           <main className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-6', dirtyFormCount > 0 && 'pb-44')}>
@@ -384,6 +384,7 @@ export default function App() {
           </main>
           <DirtySaveBar scope="app" />
         </div>
+        <OverlayHosts toasts={<NotificationHost onNavigateLogs={openLogs} />} />
       </TooltipProvider>
     </div>
   )

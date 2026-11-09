@@ -30,6 +30,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { asDiagnostic } from '@/lib/diagnostic'
@@ -44,6 +45,7 @@ import { Button } from '@/components/ui/button'
 import { DialogDepthContext } from '@/components/ui/dialogContext'
 import { type CoreCommand, type Diagnostic, type Domain, type ProcessEvent, type ProjectDetail, runCommand, runCommandWithin } from '@/core'
 import { useAnimatedClose } from '@/lib/hooks'
+import { OVERLAY_ROOT_ID, useOverlayHost } from '@/lib/overlayHost'
 import { useDirtyFormCount, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
 import { cn } from '@/lib/utils'
 import type { Web } from '@/lib/web'
@@ -106,6 +108,7 @@ const READ_TIMEOUT_MS = 20_000
  */
 export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target: SiteTarget; web: Web; onClose: () => void; onSaved: (hostname: string) => void }) {
   const { state, close: closeAnimated } = useAnimatedClose(closeNow)
+  const overlayHost = useOverlayHost(OVERLAY_ROOT_ID)
   const onClose = useCallback(async () => {
     if (await warnBeforeLeavingUnsavedChanges('dialog')) closeAnimated()
   }, [closeAnimated])
@@ -255,7 +258,9 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
   const title = target.hostname ?? project?.name ?? 'Site'
   const settingsDomain = target.hostname ? domain : { ...newDomain(), project_id: projectId }
 
-  return (
+  if (!overlayHost) return null
+  // Portaled: `fixed` inside a Card (backdrop-blur) would be placed relative to that card.
+  return createPortal(
     <DialogDepthContext.Provider value={1}>
       <div className="fixed top-9 inset-x-0 bottom-0 z-[60] flex items-center justify-center p-4">
         <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={onClose} />
@@ -487,7 +492,8 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
         <DirtySaveBar scope="dialog" />
       </div>
     </div>
-    </DialogDepthContext.Provider>
+    </DialogDepthContext.Provider>,
+    overlayHost,
   )
 }
 

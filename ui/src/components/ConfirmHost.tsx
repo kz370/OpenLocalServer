@@ -33,20 +33,25 @@ export function ConfirmHost() {
     setReq(null)
   }
 
-  const [first, ...rest] = (req?.message ?? '').split('\n')
+  // The dialog keeps rendering for its exit animation after `req` is cleared; show the last
+  // request meanwhile, or the closing dialog flashes an empty title and a "Confirm" button.
+  const [shown, setShown] = useState<ConfirmRequest | null>(null)
+  if (req && req !== shown) setShown(req)
+
+  const [first, ...rest] = (shown?.message ?? '').split('\n')
   return (
     <Dialog
       open={req !== null}
       onClose={() => answer(false)}
-      title={req?.title ?? ''}
+      title={shown?.title ?? ''}
       layer="confirm"
       footer={
         <>
           <Button variant="ghost" onClick={() => answer(false)}>
             Cancel
           </Button>
-          <Button ref={yes} variant={req?.confirmTone === 'amber' ? 'outline' : 'destructive'} className={req?.confirmTone === 'amber' ? 'border-amber-500/50 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400' : undefined} onClick={() => answer(true)}>
-            {req?.confirmLabel ?? 'Confirm'}
+          <Button ref={yes} variant={shown?.confirmTone === 'amber' ? 'outline' : 'destructive'} className={shown?.confirmTone === 'amber' ? 'border-amber-500/50 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400' : undefined} onClick={() => answer(true)}>
+            {shown?.confirmLabel ?? 'Confirm'}
           </Button>
         </>
       }

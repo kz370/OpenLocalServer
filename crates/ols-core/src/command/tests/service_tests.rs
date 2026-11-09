@@ -392,12 +392,23 @@ fn env_files_round_trip_through_the_core_and_keep_a_backup() {
     assert_eq!(v.content, "APP_ENV=example\n");
 }
 
+fn fake_web_server_installed(home: &crate::test_support::IsolatedHome, server_id: &str) {
+    let bin_rel = crate::runtime::runtime_binary(server_id).unwrap_or("nginx.exe");
+    let exe = home
+        .paths
+        .runtimes_dir()
+        .join(server_id)
+        .join("1.0.0")
+        .join(bin_rel);
+    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    std::fs::write(&exe, b"").unwrap();
+}
+
 #[test]
 fn manual_stop_produces_no_finding() {
     let (core, home) = test_core();
     let server_id = core.inner().web_config().default_server;
-    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
-    std::fs::create_dir_all(&version_dir).unwrap();
+    fake_web_server_installed(&home, &server_id);
 
     core.inner()
         .domains
@@ -431,8 +442,7 @@ fn manual_stop_produces_no_finding() {
 fn crash_produces_finding() {
     let (core, home) = test_core();
     let server_id = core.inner().web_config().default_server;
-    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
-    std::fs::create_dir_all(&version_dir).unwrap();
+    fake_web_server_installed(&home, &server_id);
 
     core.inner()
         .domains
@@ -460,7 +470,7 @@ fn crash_produces_finding() {
     let findings = core.inner().diagnose();
     assert!(
         findings.iter().any(|f| f.id == "web_stopped"),
-        "crashed/unexpectedly stopped service with desired_state=Running must produce web_stopped finding"
+        "crashed/unexpectedly stopped service with desired_state=Running must produce web_stopped finding: {findings:?}"
     );
 }
 
@@ -468,8 +478,7 @@ fn crash_produces_finding() {
 fn startup_settle_produces_no_finding_while_starting() {
     let (core, home) = test_core();
     let server_id = core.inner().web_config().default_server;
-    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
-    std::fs::create_dir_all(&version_dir).unwrap();
+    fake_web_server_installed(&home, &server_id);
 
     core.inner()
         .domains
@@ -507,7 +516,7 @@ fn startup_settle_produces_no_finding_while_starting() {
     let findings_after = core.inner().diagnose();
     assert!(
         findings_after.iter().any(|f| f.id == "web_stopped"),
-        "after startup settling finishes, down service must be reported"
+        "after startup settling finishes, down service must be reported: {findings_after:?}"
     );
 }
 
@@ -515,8 +524,7 @@ fn startup_settle_produces_no_finding_while_starting() {
 fn tray_and_cli_stop_produces_no_finding() {
     let (core, home) = test_core();
     let server_id = core.inner().web_config().default_server;
-    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
-    std::fs::create_dir_all(&version_dir).unwrap();
+    fake_web_server_installed(&home, &server_id);
 
     core.inner()
         .domains
@@ -544,7 +552,7 @@ fn tray_and_cli_stop_produces_no_finding() {
     let findings = core.inner().diagnose();
     assert!(
         !findings.iter().any(|f| f.id == "web_stopped"),
-        "StopWeb must leave desired_state=Stopped and produce no web_stopped finding"
+        "StopWeb must leave desired_state=Stopped and produce no web_stopped finding: {findings:?}"
     );
 
     // Front door: StopAll (dispatched by tray or CLI `ols stop --all`)
@@ -560,7 +568,7 @@ fn tray_and_cli_stop_produces_no_finding() {
     let findings2 = core.inner().diagnose();
     assert!(
         !findings2.iter().any(|f| f.id == "web_stopped"),
-        "StopAll must leave desired_state=Stopped and produce no web_stopped finding"
+        "StopAll must leave desired_state=Stopped and produce no web_stopped finding: {findings2:?}"
     );
 }
 
@@ -568,8 +576,7 @@ fn tray_and_cli_stop_produces_no_finding() {
 fn apply_web_never_starts_stopped_desired_state_service() {
     let (core, home) = test_core();
     let server_id = core.inner().web_config().default_server;
-    let version_dir = home.paths.runtimes_dir().join(&server_id).join("1.0.0");
-    std::fs::create_dir_all(&version_dir).unwrap();
+    fake_web_server_installed(&home, &server_id);
 
     // Service desired state is Stopped
     core.dispatch(CoreCommand::StopService {

@@ -1,8 +1,10 @@
 import { X } from 'lucide-react'
 import { useContext, type ReactNode, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 import { DialogDepthContext } from '@/components/ui/dialogContext'
 import { usePresence } from '@/lib/hooks'
+import { OVERLAY_ROOT_ID, useOverlayHost } from '@/lib/overlayHost'
 import { cn } from '@/lib/utils'
 
 export type DialogLayer = 'default' | 'sub' | 'top' | 'ai' | 'confirm'
@@ -45,7 +47,8 @@ export function Dialog({
   }, [open, onClose])
 
   const { mounted, state } = usePresence(open)
-  if (!mounted) return null
+  const host = useOverlayHost(OVERLAY_ROOT_ID)
+  if (!mounted || !host) return null
   const width = size ?? (wide ? 'wide' : 'default')
 
   // Layer hierarchy: confirm (90) > ai (80) > top/sub or nested (70) > base (60)
@@ -60,7 +63,8 @@ export function Dialog({
 
   const currentDepth = parentDepth + 1
 
-  return (
+  // Portaled: `fixed` inside a Card (backdrop-blur) would be placed relative to that card.
+  return createPortal(
     <DialogDepthContext.Provider value={currentDepth}>
       <div className={cn('fixed top-9 inset-x-0 bottom-0 flex items-center justify-center p-4', zClass)}>
         <div data-state={state} className="modal-backdrop absolute inset-0 bg-black/50" onClick={onClose} />
@@ -90,6 +94,7 @@ export function Dialog({
           {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-3">{footer}</div>}
         </div>
       </div>
-    </DialogDepthContext.Provider>
+    </DialogDepthContext.Provider>,
+    host,
   )
 }

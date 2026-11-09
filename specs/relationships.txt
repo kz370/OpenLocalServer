@@ -2,7 +2,9 @@ UI | uses | Tauri run_command
 UI Pages (Dashboard, Sites, Tunnels, WebServer, Databases, Services, Runtimes, Commands, QuickApps, Profiles, Plugins, Settings, Processes, Tasks) | uses | PersistentCache (ui/src/lib/cache.ts) for instant 0ms cross-session rendering and localStorage persistence
 UI Pages & Dialogs | uses | NotificationSystem (ui/src/lib/notify.ts) for toasts, Undo actions, and batch summaries
 Titlebar | mounts | NotificationsPopover (ui/src/components/NotificationsPopover.tsx) for recent notification history
-App | mounts | NotificationHost (ui/src/components/NotificationHost.tsx) for global toast rendering
+App | mounts | OverlayHosts (ui/src/components/OverlayHosts.tsx), which renders NotificationHost (ui/src/components/NotificationHost.tsx) in the bottom-right corner stack for global toast rendering
+Dialog, SiteDialog | portal into | OverlayHosts overlay root (useOverlayHost, ui/src/lib/overlayHost.ts)
+ErrorCard (overlay) | portals into | OverlayHosts corner-errors slot above the toasts
 NotificationHost | calls | dismissAllNotifications (ui/src/lib/notify.ts) from the Dismiss all (N) pill at the bottom of the stack, shown when 2+ non-progress toasts are queued; progress toasts stay
 App | imports | all page modules with static imports so every page is ready at shell startup and navigation does not wait for a page chunk to load, except DockerPage, which App loads with React.lazy (optional feature, own chunk, kept out of the startup bundle)
 App | mounts | TooltipProvider (ui/src/components/ui/tooltip.tsx) for modern themed tooltips and global title/data-tooltip interception; tooltip labels wrap long paths/URLs and stay within viewport width
@@ -354,7 +356,7 @@ Sidebar | reads | navItems (NAV_GROUPS, LOCKED_NAV_ITEMS) and useHiddenSidebarIt
 Settings page | mounts | SidebarItemsSettings as its own "Sidebar" section (after Appearance)
 Settings page | mounts | SettingsNav (SettingsSearch, SectionTabs, OnThisPage) for grouped sidebar, search, tabs and in-page chips
 SettingsSearch | calls | jumpToSetting -> scrolls to the matching setting row
-Settings page | passes | OnThisPage to PageLayout toolbar (non-scrolling) when usePageHeadings finds 3+ card titles
+Settings page | renders | OnThisPage above its own page scroller (non-scrolling, nav rail unaffected) when usePageHeadings finds 3+ card titles
 SystemCard (ReleaseCards) | sets | data-toc-label="System" so the On this page chip is short
 SidebarItemsSettings | calls | setHiddenSidebarItems -> set_setting ui.sidebar.hidden
 sidebarVisibility | calls | get_setting ui.sidebar.hidden (once per session)

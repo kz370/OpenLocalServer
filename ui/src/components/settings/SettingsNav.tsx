@@ -222,8 +222,12 @@ export function jumpToSetting(root: HTMLElement | null, title: string): boolean 
   return true
 }
 
-/** Search box for the settings sidebar. Wide layout only: the narrow icon rail has no room. */
-export function SettingsSearch({ onPick }: { onPick: (section: Section, match: string | null) => void }) {
+/**
+ * Search box for settings. The page renders it in the sidebar on wide layouts and in the page
+ * header on narrow ones (the icon rail has no room); `className` picks the visibility and
+ * `floating` shows the results as a dropdown over the page instead of inline.
+ */
+export function SettingsSearch({ onPick, className, floating = false }: { onPick: (section: Section, match: string | null) => void; className?: string; floating?: boolean }) {
   const [query, setQuery] = useState('')
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -246,7 +250,7 @@ export function SettingsSearch({ onPick }: { onPick: (section: Section, match: s
   }
 
   return (
-    <div className="hidden flex-col gap-1 @4xl:flex">
+    <div className={cn('relative flex-col gap-1', className)}>
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -267,7 +271,10 @@ export function SettingsSearch({ onPick }: { onPick: (section: Section, match: s
         )}
       </div>
       {query && (
-        <div className="flex max-h-[min(24rem,60vh)] flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-lg border border-border/80 bg-card p-1 ols-scroll-thin">
+        <div className={cn(
+          'flex max-h-[min(24rem,60vh)] flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-lg border border-border/80 p-1 ols-scroll-thin',
+          floating ? 'absolute inset-x-0 top-full z-50 mt-1 bg-popover shadow-xl backdrop-blur-xl' : 'bg-card',
+        )}>
           {results.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No matching setting.</p>}
           {results.length > 0 && (
             <p className="px-2 pb-0.5 pt-1 text-[10px] text-muted-foreground">
