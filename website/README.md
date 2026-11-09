@@ -13,6 +13,19 @@ website/index.html      redirect to ../index.html, so the old URL still works
 website/README.md       this file
 ```
 
+## Publish it
+
+Pushing to `main` does **not** update the live site. GitHub Pages is set to
+"GitHub Actions" and `.github/workflows/pages.yml` runs only when started:
+
+```powershell
+gh workflow run pages.yml --ref main
+```
+
+or **Actions → Website → Run workflow** on GitHub. It publishes `index.html` and
+`website/` only, and fails before deploying if `index.html` references a
+`website/` file that is missing.
+
 ## Run it locally
 
 Serve the **repository root**, not `website/` — the paths in `index.html` are

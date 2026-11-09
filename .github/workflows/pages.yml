@@ -1,0 +1,60 @@
+name: Website
+
+# Publishes the project site (index.html + website/) to GitHub Pages, and only when asked.
+# Pages used to be set to "deploy from branch", which rebuilt the site on every push to main,
+# including pushes that only touched Rust code. Now Pages' source is "GitHub Actions" and this
+# workflow has a single manual trigger:
+#
+#   gh workflow run pages.yml --ref main
+#
+# or Actions -> Website -> Run workflow. Pushing to main never deploys the site.
+#
+# Only the site's own files are published (index.html, website/), not the whole repository the
+# branch deploy used to serve.
+on:
+  workflow_dispatch:
+
+# Pages deploy needs these, and nothing else. Read-only contents everywhere else.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a second run waits instead of cancelling a deploy halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy website
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Stage the site
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp index.html _site/
+          cp -r website _site/
+          rm -f _site/website/README.md
+          # Plain static files: no Jekyll processing.
+          touch _site/.nojekyll
+          # Fail before deploying if a page asset the site references is missing.
+          grep -oE '(href|src|content)="website/[^"]+"' index.html \
+            | sed -E 's/^[a-z]+="//; s/"$//' | sort -u \
+            | while read -r f; do
+                [ -f "_site/$f" ] || { echo "::error::index.html references $f, which is not in the repository."; exit 1; }
+              done
+          find _site -type f | sort
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v5
