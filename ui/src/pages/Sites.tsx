@@ -1135,7 +1135,13 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                     await refresh()
                   })
                 } else {
-                  void run('apply', () => apply())
+                  void run('apply', async () => {
+                    // An explicit Start must mark the server as wanted; apply alone never
+                    // starts a server whose desired state is stopped.
+                    const cfg = await runCommand({ type: 'get_web_config' })
+                    if (cfg.type === 'web_config') await runCommand({ type: 'start_service', id: cfg.config.default_server })
+                    await apply()
+                  })
                 }
               }}
             >
