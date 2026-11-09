@@ -43,7 +43,8 @@ export function NotificationHost({ onNavigateLogs }: { onNavigateLogs?: (source?
   return (
     <div
       aria-label="Notifications"
-      className="fixed bottom-4 right-4 z-[9999] flex max-w-sm w-full flex-col-reverse gap-2.5 pointer-events-none"
+      // Positioned by the corner stack in OverlayHosts, which also holds the overlay ErrorCards.
+      className="flex max-w-sm w-full flex-col-reverse gap-2.5 pointer-events-none"
     >
       {/* First child of a column-reverse stack, so it sits at the bottom, below the toasts. */}
       {dismissibleCount >= 2 && (
