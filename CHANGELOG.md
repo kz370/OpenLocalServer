@@ -27,6 +27,7 @@ Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.
 
 ### Changed & Improved
 - **More editors found, and a Refresh button:** Settings → Editors now also finds Antigravity, Kiro, VS Code Insiders, Visual Studio, Android Studio, CLion and RubyMine, including editors installed on another drive or in your user folders. Only the real editor is listed, not other programs with the same name. **Refresh** checks again and says what it found.
+- **Hide a security warning:** a warning you do not care about (for example an old PHP version you keep on purpose) can be hidden with its eye button, on the Dashboard Security card or in a project's Security tab. Hidden items are not counted; **N hidden** brings them back. When nothing needs attention, the Dashboard Security card shrinks to one slim row.
 
 ## [2.11.0] — 2026-11-08
 

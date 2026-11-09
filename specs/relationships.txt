@@ -443,3 +443,4 @@ dispatch::GetWebStatus / StopService / StopWeb / set_domain_enabled | calls | la
 Core::with_parts / src-tauri shutdown / olsc daemon exit | call | lan::stop_all
 SettingsPage (Editors → Refresh) -> runCommand list_editors -> editors::list_all -> editors::detect; SettingsPage -> summarizeEditorRefresh -> notify; SettingsPage -> invalidateEditorsCache; OpenWithMenu -> loadEditors (ui/src/lib/editors.ts)
 editors::detect -> registered_install_dirs (windows-sys Win32_System_Registry) ; editors::detect -> web::manager::find_executable (PATH shims)
+SecuritySummaryCard, SecurityPanel -> useIgnoredSecurity -> runCommand get_setting/set_setting (`security.ignored`)
