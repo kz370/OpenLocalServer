@@ -422,6 +422,47 @@ fn project_database(project: &Project) -> Option<(String, String)> {
     Some((engine, name))
 }
 
+/// The database name the site itself is configured to use (WordPress `wp-config.php`, then
+/// the `.env` `DB_DATABASE`), when it is on `engine`.
+fn configured_database(project: &Project, engine: &str) -> Option<String> {
+    let root = PathBuf::from(&project.path);
+    crate::wordpress::database(&root)
+        .filter(|(e, _)| e == engine)
+        .map(|(_, name)| name)
+        .or_else(|| {
+            crate::setup::env_value(&root, "DB_DATABASE")
+                .map(|n| n.trim().to_string())
+                .filter(|n| !n.is_empty())
+        })
+}
+
+/// Which database to dump for a project. The manifest's name wins when the server has it.
+/// When it does not — the manifest drifted from the site, e.g. `worpress_test` declared
+/// while `wp-config.php` and the server use `worpress-test` — the name the site's own
+/// config points at is used if the server has that one. Neither on the server is a problem
+/// that says what to change, instead of a raw "Unknown database" from the dump tool.
+/// `existing` is `None` when the server could not be listed; the declared name is kept.
+fn pick_database(
+    project: &str,
+    engine: &str,
+    declared: String,
+    existing: Option<&[String]>,
+    configured: Option<String>,
+) -> Result<String, String> {
+    let Some(existing) = existing else {
+        return Ok(declared);
+    };
+    if existing.iter().any(|d| *d == declared) {
+        return Ok(declared);
+    }
+    if let Some(name) = configured.filter(|n| existing.iter().any(|d| d == n)) {
+        return Ok(name);
+    }
+    Err(format!(
+        "{declared} ({engine}) for {project} was not dumped: the project's environment.yaml names this database, but {engine} has no database called {declared}. Create it, or set database.name in {project}'s .openlocalserver/environment.yaml to the database the site uses."
+    ))
+}
+
 /// Every database in scope, as `(engine, name, owning project)`, deduplicated. The owner
 /// is what decides how many of its dumps to keep — a project's own count, or the plan's.
 /// Anything in scope that cannot be dumped is named in `run.problems` rather than dropped.
@@ -455,7 +496,14 @@ fn sql_targets(
         for project in projects {
             match project_database(project) {
                 Some((engine, name)) if SQL_ENGINES.contains(&engine.as_str()) => {
-                    out.push((engine, name, Some(project.id.clone())))
+                    // A server that cannot be listed (stopped, not installed) is left to the
+                    // dump itself, which reports why it failed.
+                    let existing = inner.services.list_databases(&engine).ok();
+                    let configured = configured_database(project, &engine);
+                    match pick_database(&project.name, &engine, name, existing.as_deref(), configured) {
+                        Ok(name) => out.push((engine, name, Some(project.id.clone()))),
+                        Err(problem) => run.problems.push(problem),
+                    }
                 }
                 Some((engine, name)) => run.problems.push(format!(
                     "{name} ({engine}) was not dumped: automatic database backups cover MariaDB, PostgreSQL and SQLite files. Back up {engine} by hand."
@@ -1036,6 +1084,42 @@ pub fn clock_tick(inner: &std::sync::Arc<Inner>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pick_database_falls_back_to_the_name_the_site_uses() {
+        let on_server = vec!["worpress-test".to_string(), "shop".to_string()];
+        // Declared name exists: kept.
+        assert_eq!(
+            pick_database("p", "mariadb", "shop".into(), Some(&on_server), None),
+            Ok("shop".into())
+        );
+        // Manifest drifted: the wp-config / .env name is used.
+        assert_eq!(
+            pick_database(
+                "worpress-test",
+                "mariadb",
+                "worpress_test".into(),
+                Some(&on_server),
+                Some("worpress-test".into())
+            ),
+            Ok("worpress-test".into())
+        );
+        // Neither exists: a problem naming the fix, not a raw dump error.
+        let err = pick_database(
+            "p",
+            "mariadb",
+            "gone".into(),
+            Some(&on_server),
+            Some("also_gone".into()),
+        )
+        .unwrap_err();
+        assert!(err.contains("environment.yaml"), "{err}");
+        // Server could not be listed: the declared name is left to the dump.
+        assert_eq!(
+            pick_database("p", "mariadb", "gone".into(), None, None),
+            Ok("gone".into())
+        );
+    }
 
     #[test]
     fn a_pass_that_panics_releases_the_running_flag() {
