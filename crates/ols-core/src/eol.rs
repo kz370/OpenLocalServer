@@ -255,11 +255,11 @@ mod tests {
             .find(|i| i.runtime == "php" && i.version == "8.1.34")
             .unwrap();
         assert!(matches!(php.status, EolStatus::Ended { .. }));
-        // The diagnostics rule turns it into a warning with a stable id.
+        // Security issues appear only in the Security section, not in Diagnostics.
         let findings = inner.diagnose();
         assert!(
-            findings.iter().any(|f| f.id == "eol:php:8.1"),
-            "{:?}",
+            !findings.iter().any(|f| f.id.starts_with("eol:")),
+            "Diagnostics must not contain security/eol findings: {:?}",
             findings.iter().map(|f| &f.id).collect::<Vec<_>>()
         );
     }

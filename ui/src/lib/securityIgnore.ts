@@ -14,8 +14,14 @@ export function parseIgnored(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
 }
 
+/** The list with all `keys` added, or removed when `hidden` is false. No duplicates. */
+export function withManyIgnored(list: string[], keys: string[], hidden: boolean): string[] {
+  const keySet = new Set(keys)
+  const rest = list.filter((k) => !keySet.has(k))
+  return hidden ? [...rest, ...Array.from(keySet)] : rest
+}
+
 /** The list with `key` added, or removed when `hidden` is false. No duplicates. */
 export function withIgnored(list: string[], key: string, hidden: boolean): string[] {
-  const rest = list.filter((k) => k !== key)
-  return hidden ? [...rest, key] : rest
+  return withManyIgnored(list, [key], hidden)
 }

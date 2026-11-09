@@ -39,6 +39,7 @@ export function SecurityDetailsDialog({
   projectNames,
   ignored,
   setHidden,
+  setManyHidden,
   onError,
 }: {
   open: boolean
@@ -48,13 +49,14 @@ export function SecurityDetailsDialog({
   projectNames: Record<string, string>
   ignored: string[]
   setHidden: (key: string, hidden: boolean) => void
+  setManyHidden?: (keys: string[], hidden: boolean) => void
   onError: (e: unknown) => void
 }) {
   const [showHidden, setShowHidden] = useState(false)
-  // Projects (by id, or 'versions') left out of Copy all / Export. Everything is included by default.
-  const [skipped, setSkipped] = useState<string[]>([])
-  const included = (id: string) => !skipped.includes(id)
-  const toggle = (id: string) => setSkipped((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]))
+  // Keys of items explicitly deselected by the user. By default (empty Set), everything is selected.
+  const [deselected, setDeselected] = useState<Set<string>>(() => new Set())
+  const isSelected = (key: string) => !deselected.has(key)
+
   const ended = eol.filter((i) => i.status.state === 'ended')
   const groups = results
     .map((r) => ({
@@ -67,13 +69,70 @@ export function SecurityDetailsDialog({
     }))
     .filter((g) => g.items.length > 0)
   const visibleEnded = ended.filter((i) => showHidden || !ignored.includes(eolKey(i.runtime, i.version)))
+  const versionKeys = visibleEnded.map((i) => eolKey(i.runtime, i.version))
   const hiddenTotal =
     ended.filter((i) => ignored.includes(eolKey(i.runtime, i.version))).length +
     results.reduce((n, r) => n + r.tools.reduce((m, t) => m + t.findings.filter((f) => ignored.includes(findingKey(r.project_id, t.tool, f))).length, 0), 0)
 
+  const allVisibleKeys = [
+    ...versionKeys,
+    ...groups.flatMap((g) => g.items.map((x) => x.key)),
+  ]
+  const selectedKeys = allVisibleKeys.filter((k) => !deselected.has(k))
+  const selectedToHide = selectedKeys.filter((k) => !ignored.includes(k))
+
+  const toggleItem = (key: string) => {
+    setDeselected((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  const toggleGroup = (keys: string[]) => {
+    setDeselected((prev) => {
+      const next = new Set(prev)
+      const allGroupSelected = keys.length > 0 && keys.every((k) => !prev.has(k))
+      if (allGroupSelected) {
+        for (const k of keys) next.add(k)
+      } else {
+        for (const k of keys) next.delete(k)
+      }
+      return next
+    })
+  }
+
+  const allSelected = allVisibleKeys.length > 0 && selectedKeys.length === allVisibleKeys.length
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setDeselected(new Set(allVisibleKeys))
+    } else {
+      setDeselected(new Set())
+    }
+  }
+
+  const handleHideSelected = () => {
+    if (selectedToHide.length === 0) return
+    if (setManyHidden) {
+      setManyHidden(selectedToHide, true)
+    } else {
+      for (const k of selectedToHide) setHidden(k, true)
+    }
+    notify.success(`Hidden ${selectedToHide.length} selected security issue${selectedToHide.length === 1 ? '' : 's'}.`)
+  }
+
   /** What the user sees right now (hidden items only when shown), as plain data for copy and export. */
-  const exportItems: ExportItem[] = groups.filter((g) => included(g.id)).flatMap((g) => g.items.map((x) => ({ project: g.name, tool: x.tool, f: x.f })))
-  const exportEnded = (included('versions') ? visibleEnded : []).map((i) => ({ runtime: i.runtime, version: i.version, usedBy: i.used_by }))
+  const exportItems: ExportItem[] = groups.flatMap((g) =>
+    g.items.filter((x) => isSelected(x.key)).map((x) => ({ project: g.name, tool: x.tool, f: x.f }))
+  )
+  const exportEnded = visibleEnded
+    .filter((i) => isSelected(eolKey(i.runtime, i.version)))
+    .map((i) => ({ runtime: i.runtime, version: i.version, usedBy: i.used_by }))
 
   async function copyText(text: string, what: string) {
     try {
@@ -108,6 +167,15 @@ export function SecurityDetailsDialog({
     <li key={x.key} className={ignored.includes(x.key) ? 'opacity-60' : ''}>
       <details className="group rounded-lg border border-border">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm [&::-webkit-details-marker]:hidden">
+          <input
+            type="checkbox"
+            className="size-3.5 shrink-0 cursor-pointer accent-primary"
+            checked={isSelected(x.key)}
+            title="Select this issue"
+            aria-label={`Select ${x.f.package} - ${x.f.title}`}
+            onChange={() => toggleItem(x.key)}
+            onClick={(e) => e.stopPropagation()}
+          />
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
           <Badge variant={SEVERITY_VARIANT[x.f.severity] ?? 'outline'}>{x.f.severity}</Badge>
           <span className="inline-flex max-w-[10rem] shrink-0 items-center gap-1 truncate rounded bg-muted px-1.5 py-0.5 text-xs" title={`Project: ${project}`}>
@@ -168,11 +236,32 @@ export function SecurityDetailsDialog({
             >
               <Copy /> Copy selected
             </Button>
-            <Button size="sm" variant="outline" className="cursor-pointer" disabled={exportItems.length + exportEnded.length === 0} onClick={() => void exportAll()}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="cursor-pointer"
+              disabled={exportItems.length + exportEnded.length === 0}
+              onClick={() => void exportAll()}
+            >
               <Download /> Export selected
             </Button>
-            <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => setSkipped(skipped.length === 0 ? [...groups.map((g) => g.id), 'versions'] : [])}>
-              {skipped.length === 0 ? 'Select none' : 'Select all'}
+            <Button
+              size="sm"
+              variant="outline"
+              className="cursor-pointer"
+              disabled={selectedToHide.length === 0}
+              onClick={handleHideSelected}
+            >
+              <EyeOff /> Hide selected
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="cursor-pointer"
+              disabled={allVisibleKeys.length === 0}
+              onClick={toggleSelectAll}
+            >
+              {allSelected ? 'Select none' : 'Select all'}
             </Button>
             {hiddenTotal > 0 && (
               <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => setShowHidden((v) => !v)}>
@@ -187,67 +276,91 @@ export function SecurityDetailsDialog({
       }
     >
       <div className="flex flex-col gap-5">
-        {visibleEnded.length > 0 && (
-          <details className="group flex flex-col gap-2">
-            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
-              <input
-                type="checkbox"
-                className="size-3.5 shrink-0 cursor-pointer accent-primary"
-                checked={included('versions')}
-                title="Include in Copy all and Export"
-                aria-label="Include versions in Copy all and Export"
-                onChange={() => toggle('versions')}
-                onClick={(e) => e.stopPropagation()}
-              />
-              <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
-              Versions that no longer get security fixes
-              <span className="text-xs font-normal text-muted-foreground">{visibleEnded.length}</span>
-            </summary>
-            <ul className="mt-2 flex flex-col gap-2">
-              {visibleEnded.map((i) => {
-                const key = eolKey(i.runtime, i.version)
-                const label = eolLabel(i.status)
-                return (
-                  <li key={key} className={`flex flex-col gap-1 rounded-lg border border-border px-3 py-2 ${ignored.includes(key) ? 'opacity-60' : ''}`}>
-                    <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                      <ShieldAlert className="size-4" /> {i.runtime} {i.version}
-                      {label && <Badge variant={label.variant}>{label.text}</Badge>}
-                      {hideButton(key)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {i.used_by.length > 0 ? `Used by: ${i.used_by.join(', ')}.` : 'Installed on this computer.'} Install a newer version on the Runtimes page.
-                    </p>
-                  </li>
-                )
-              })}
-            </ul>
-          </details>
-        )}
-        {groups.map((g) => (
-          <details key={g.id} className="group">
-            <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
-              <input
-                type="checkbox"
-                className="size-3.5 shrink-0 cursor-pointer accent-primary"
-                checked={included(g.id)}
-                title="Include in Copy all and Export"
-                aria-label="Include {g.name} in Copy all and Export"
-                onChange={() => toggle(g.id)}
-                onClick={(e) => e.stopPropagation()}
-              />
-              <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
-              <FolderOpen className="size-4 text-muted-foreground" />
-              {g.name}
-              <span className="text-xs font-normal text-muted-foreground">{g.items.length} finding(s)</span>
-              {sevCounts(g.items).map(([sev, n]) => (
-                <Badge key={sev} variant={SEVERITY_VARIANT[sev] ?? 'outline'}>
-                  {n} {sev}
-                </Badge>
-              ))}
-            </summary>
-            <ul className="mt-2 flex flex-col gap-2">{g.items.map((x) => finding(x, g.name))}</ul>
-          </details>
-        ))}
+        {visibleEnded.length > 0 && (() => {
+          const isVersionsChecked = versionKeys.length > 0 && versionKeys.every((k) => isSelected(k))
+          const isVersionsIndeterminate = versionKeys.some((k) => isSelected(k)) && !isVersionsChecked
+          return (
+            <details className="group flex flex-col gap-2">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                <input
+                  type="checkbox"
+                  ref={(el) => {
+                    if (el) el.indeterminate = isVersionsIndeterminate
+                  }}
+                  className="size-3.5 shrink-0 cursor-pointer accent-primary"
+                  checked={isVersionsChecked}
+                  title="Select all versions"
+                  aria-label="Select all versions"
+                  onChange={() => toggleGroup(versionKeys)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
+                Versions that no longer get security fixes
+                <span className="text-xs font-normal text-muted-foreground">{visibleEnded.length}</span>
+              </summary>
+              <ul className="mt-2 flex flex-col gap-2">
+                {visibleEnded.map((i) => {
+                  const key = eolKey(i.runtime, i.version)
+                  const label = eolLabel(i.status)
+                  return (
+                    <li key={key} className={`flex flex-col gap-1 rounded-lg border border-border px-3 py-2 ${ignored.includes(key) ? 'opacity-60' : ''}`}>
+                      <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                        <input
+                          type="checkbox"
+                          className="size-3.5 shrink-0 cursor-pointer accent-primary"
+                          checked={isSelected(key)}
+                          title="Select this version"
+                          aria-label={`Select ${i.runtime} ${i.version}`}
+                          onChange={() => toggleItem(key)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <ShieldAlert className="size-4" /> {i.runtime} {i.version}
+                        {label && <Badge variant={label.variant}>{label.text}</Badge>}
+                        {hideButton(key)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {i.used_by.length > 0 ? `Used by: ${i.used_by.join(', ')}.` : 'Installed on this computer.'} Install a newer version on the Runtimes page.
+                      </p>
+                    </li>
+                  )
+                })}
+              </ul>
+            </details>
+          )
+        })()}
+        {groups.map((g) => {
+          const groupKeys = g.items.map((x) => x.key)
+          const isGroupChecked = groupKeys.length > 0 && groupKeys.every((k) => isSelected(k))
+          const isGroupIndeterminate = groupKeys.some((k) => isSelected(k)) && !isGroupChecked
+          return (
+            <details key={g.id} className="group">
+              <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                <input
+                  type="checkbox"
+                  ref={(el) => {
+                    if (el) el.indeterminate = isGroupIndeterminate
+                  }}
+                  className="size-3.5 shrink-0 cursor-pointer accent-primary"
+                  checked={isGroupChecked}
+                  title={`Select all in ${g.name}`}
+                  aria-label={`Select all in ${g.name}`}
+                  onChange={() => toggleGroup(groupKeys)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
+                <FolderOpen className="size-4 text-muted-foreground" />
+                {g.name}
+                <span className="text-xs font-normal text-muted-foreground">{g.items.length} finding(s)</span>
+                {sevCounts(g.items).map(([sev, n]) => (
+                  <Badge key={sev} variant={SEVERITY_VARIANT[sev] ?? 'outline'}>
+                    {n} {sev}
+                  </Badge>
+                ))}
+              </summary>
+              <ul className="mt-2 flex flex-col gap-2">{g.items.map((x) => finding(x, g.name))}</ul>
+            </details>
+          )
+        })}
         {visibleEnded.length === 0 && groups.length === 0 && <p className="text-sm text-muted-foreground">Nothing to show.</p>}
       </div>
     </Dialog>,

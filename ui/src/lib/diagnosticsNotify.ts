@@ -1846,7 +1846,9 @@ export function buildDiagnosticsBarFindings(
   healthProblems: HealthItem[],
   startingIds: Set<string>,
 ): Finding[] {
-  const findingIds = new Set(findings.map((f) => f.id))
+  // Security issues appear only in the Security section, not in Diagnostics.
+  const diagnosticsFindings = findings.filter((f) => !f.id.startsWith('eol:'))
+  const findingIds = new Set(diagnosticsFindings.map((f) => f.id))
 
   const syntheticHealthFindings: Finding[] = healthProblems
     .filter((h) => h.status !== 'ok')
@@ -1872,7 +1874,7 @@ export function buildDiagnosticsBarFindings(
       fix_command: null,
     }))
 
-  const combined = [...findings, ...syntheticHealthFindings]
+  const combined = [...diagnosticsFindings, ...syntheticHealthFindings]
 
   return combined.map((f) => {
     if (f.ignored) return f

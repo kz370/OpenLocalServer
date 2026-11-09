@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { eolKey, findingKey, parseIgnored, withIgnored } from './securityIgnore.ts'
+import { eolKey, findingKey, parseIgnored, withIgnored, withManyIgnored } from './securityIgnore.ts'
 
 test('parseIgnored keeps only strings and tolerates junk', () => {
   assert.deepEqual(parseIgnored(['a', 1, null, 'b']), ['a', 'b'])
@@ -12,6 +12,11 @@ test('withIgnored adds once and removes', () => {
   assert.deepEqual(withIgnored(['a'], 'b', true), ['a', 'b'])
   assert.deepEqual(withIgnored(['a', 'b'], 'b', true), ['a', 'b'])
   assert.deepEqual(withIgnored(['a', 'b'], 'a', false), ['b'])
+})
+
+test('withManyIgnored adds multiple keys without duplicates and removes them', () => {
+  assert.deepEqual(withManyIgnored(['a'], ['b', 'c', 'b'], true), ['a', 'b', 'c'])
+  assert.deepEqual(withManyIgnored(['a', 'b', 'c', 'd'], ['a', 'c'], false), ['b', 'd'])
 })
 
 test('keys are stable and distinguish version, project and advisory', () => {

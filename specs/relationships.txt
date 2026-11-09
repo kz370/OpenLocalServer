@@ -423,7 +423,7 @@ dispatch::PullRemoteDb | starts | task db-pull -> remote_db::pull -> download (s
 remote_db::save | stores | secrets::set_secret (remote_db:<project>:<id>)
 api::allowed | refuses | list_remote_dbs, get_anonymize_rules, suggest_anonymize_rules (NEVER list)
 ols-mcp guard_raw_command | refuses | ListRemoteDbs, SaveRemoteDb, DeleteRemoteDb, TestRemoteDb, GetAnonymizeRules, SuggestAnonymizeRules, SaveAnonymizeRules, PullRemoteDb
-Inner::diagnose_with | calls | diagnostics::check_eol -> Inner::eol_report -> eol::status
+dispatch::GetEolReport | calls | Inner::eol_report -> eol::status (security issues strictly in Security section, not Diagnostics)
 dispatch::AuditProject / AuditAllProjects | start | task audit -> audit::run_task -> audit_project -> project_program(composer|npm|pnpm)
 Runtimes page | reads | get_eol_report (badges)
 dispatch::SetSiteLan | calls | Inner::set_site_lan -> lan::pick_port + DomainStore::update + apply_web (SiteSpec.lan rendered as an extra listener; LAN IP in certs::names_for while shared over HTTPS)

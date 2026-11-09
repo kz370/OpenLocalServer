@@ -176,7 +176,7 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
   const [error, setError] = useState<Diagnostic | null>(null)
   const [showDetails, setShowDetails] = useState(false)
   const [projectNames, setProjectNames] = useState<Record<string, string>>({})
-  const { ignored, setHidden, showAll } = useIgnoredSecurity()
+  const { ignored, setHidden, setManyHidden, showAll } = useIgnoredSecurity()
 
   const load = useCallback(async () => {
     try {
@@ -251,6 +251,7 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
       projectNames={projectNames}
       ignored={ignored}
       setHidden={setHidden}
+      setManyHidden={setManyHidden}
       onError={(e) => setError(asDiagnostic(e))}
     />
   )

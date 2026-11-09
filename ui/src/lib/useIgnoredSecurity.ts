@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { runCommand } from '@/core'
-import { SECURITY_IGNORED_SETTING, parseIgnored, withIgnored } from '@/lib/securityIgnore'
+import { SECURITY_IGNORED_SETTING, parseIgnored, withIgnored, withManyIgnored } from '@/lib/securityIgnore'
 
 /** The hidden security items, saved in app settings so they stay hidden after a restart. */
 export function useIgnoredSecurity() {
@@ -21,6 +21,7 @@ export function useIgnoredSecurity() {
   }, [])
 
   const setHidden = useCallback((key: string, hidden: boolean) => save(withIgnored(ignored, key, hidden)), [ignored, save])
+  const setManyHidden = useCallback((keys: string[], hidden: boolean) => save(withManyIgnored(ignored, keys, hidden)), [ignored, save])
   const showAll = useCallback(() => save([]), [save])
-  return { ignored, setHidden, showAll }
+  return { ignored, setHidden, setManyHidden, showAll }
 }
