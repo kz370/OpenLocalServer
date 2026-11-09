@@ -25,6 +25,9 @@ Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.
 - **Open a site on your phone:** click the phone button on the Sites page (or right-click the site), confirm, and scan the QR code on a phone on the same Wi-Fi. The link is your computer's address and a port of the site's own, so no internet is needed. Choose HTTPS (install OLS's certificate once, guided) or plain HTTP. Sites on a `.local` domain can also be opened by name. You can share or stop several sites at once, and sharing always stops by itself when the web server stops, the site is turned off, or OLS quits.
 - **Services sleep when unused:** MariaDB, PostgreSQL, Redis, MongoDB and Memcached can stop after a while without connections and start again when an app connects (Services page → Sleep when unused). Off by default.
 
+### Changed & Improved
+- **More editors found, and a Refresh button:** Settings → Editors now also finds Antigravity, Kiro, VS Code Insiders, Visual Studio, Android Studio, CLion and RubyMine, including editors installed on another drive or in your user folders. Only the real editor is listed, not other programs with the same name. **Refresh** checks again and says what it found.
+
 ## [2.11.0] — 2026-11-08
 
 Feature release. Full notes: [`release-notes/v2.11.0.md`](./release-notes/v2.11.0.md).

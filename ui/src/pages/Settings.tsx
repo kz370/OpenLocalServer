@@ -6,6 +6,9 @@ import { PageLayout } from '@/components/PageLayout'
 import { ErrorCard } from '@/components/ErrorCard'
 import { asDiagnostic } from '@/lib/diagnostic'
 import { ExcludedSitesCard } from '@/components/ExcludedSitesCard'
+import { invalidateEditorsCache } from '@/lib/editors'
+import { summarizeEditorRefresh } from '@/lib/editorRefresh'
+import { notify } from '@/lib/notify'
 import { IgnoredFoldersCard } from '@/components/IgnoredFoldersCard'
 import { Markdown } from '@/components/ui/Markdown'
 import { ReleaseNotesView } from '@/components/ReleaseNotesView'
@@ -109,6 +112,7 @@ export function SettingsPage() {
   const [startup, setStartup] = useState<StartupSettings | null>(startupCache.get)
   const [services, setServices] = useState<ServiceStatus[]>(servicesCache.get)
   const [editors, setEditors] = useState<EditorInfo[]>(editorsCache.get)
+  const [refreshingEditors, setRefreshingEditors] = useState(false)
   const [showAddEditor, setShowAddEditor] = useState(false)
   const [newEditorName, setNewEditorName] = useState('')
   const [newEditorPath, setNewEditorPath] = useState('')
@@ -595,6 +599,25 @@ export function SettingsPage() {
     }
   }
 
+  /** Looks for installed editors again (e.g. one installed while the app was open). */
+  const handleRefreshEditors = async () => {
+    setRefreshingEditors(true)
+    try {
+      const res = await runCommand({ type: 'list_editors' })
+      if (res.type === 'editors') {
+        const summary = summarizeEditorRefresh(editors, res.editors)
+        setEditors(res.editors)
+        editorsCache.set(res.editors)
+        invalidateEditorsCache()
+        notify[summary.kind](summary.message, { title: 'Editors checked' })
+      }
+    } catch (e) {
+      setError(asDiagnostic(e))
+    } finally {
+      setRefreshingEditors(false)
+    }
+  }
+
   const handleToggleEditorHidden = async (id: string, hidden: boolean) => {
     try {
       const res = await runCommand({ type: 'set_editor_hidden', id, hidden })
@@ -612,16 +635,29 @@ export function SettingsPage() {
       <div className="mt-2 flex w-full flex-col gap-2.5 pt-3 border-t border-border/60">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Editors</span>
-          {!showAddEditor && (
+          <div className="flex items-center gap-1.5">
             <Button
               size="sm"
               variant="outline"
               className="h-7 text-xs px-2.5 cursor-pointer"
-              onClick={() => setShowAddEditor(true)}
+              title="Look for installed editors again"
+              disabled={refreshingEditors}
+              onClick={() => void handleRefreshEditors()}
             >
-              <FolderPlus className="size-3 mr-1" /> Add editor
+              <RefreshCw className={cn('size-3 mr-1', refreshingEditors && 'animate-spin')} />
+              {refreshingEditors ? 'Checking…' : 'Refresh'}
             </Button>
-          )}
+            {!showAddEditor && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs px-2.5 cursor-pointer"
+                onClick={() => setShowAddEditor(true)}
+              >
+                <FolderPlus className="size-3 mr-1" /> Add editor
+              </Button>
+            )}
+          </div>
         </div>
 
         {editors.filter((e) => e.path).map((ce) => (

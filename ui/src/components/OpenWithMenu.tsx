@@ -5,18 +5,7 @@ import { Button } from '@/components/ui/button'
 import { type Diagnostic, type EditorInfo, type Shortcut, runCommand } from '@/core'
 import { ErrorCard } from '@/components/ErrorCard'
 import { asDiagnostic } from '@/lib/diagnostic'
-
-/** The editors found on this machine, read once and shared by every menu on the page. */
-let editorsCache: Promise<EditorInfo[]> | null = null
-function loadEditors(): Promise<EditorInfo[]> {
-  editorsCache ??= runCommand({ type: 'list_editors' })
-    .then((r) => (r.type === 'editors' ? r.editors : []))
-    .catch(() => {
-      editorsCache = null
-      return []
-    })
-  return editorsCache
-}
+import { loadEditors } from '@/lib/editors'
 
 /**
  * "Open with" (§97): a folder or file in the chosen editor, a specific editor, Explorer, a
