@@ -1,7 +1,7 @@
 # RUNTIME
 
 ## Files to Process
-Total meaningful source files: 392 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
+Total meaningful source files: 393 (excluding target/, node_modules/, .git/, dist/, data/services/postgres runtime data, icon bulk).
 
 ### Rust core (crates/ols-core/src, 91 files)
 - src/lib.rs, app/ (mod.rs, domains.rs, projects.rs, quickapp.rs, system.rs, web.rs, tests.rs), command/ (mod.rs, types.rs, dispatch.rs, tests.rs), control.rs, api.rs, paths.rs, settings.rs, secrets.rs, db.rs
@@ -76,6 +76,7 @@ ui/src/lib/cache.ts added 2026-11-01; Files Processed is now 261, matching Files
 ui/src/lib/notify.ts, ui/src/components/NotificationHost.tsx, ui/src/components/NotificationsPopover.tsx added 2026-11-01; Files Processed is now 264, matching Files to Process.
 
 ## Log
+- [2026-11-09] feat(ui): Reorganized the Settings sidebar into groups with merged tabbed entries, a settings search, "On this page" chips and an unsaved-changes dot; moved Databases/PHP dump viewer to a new Developer tools section and Performance to Resources. Added ui/src/components/settings/SettingsNav.tsx; Files Processed is now 393, matching Files to Process. Updated catalog.txt, relationships.txt and full_documentation.md.
 - [2026-11-09] fix(diagnostics): Added per-service desired_state (Running | Stopped) in ServiceManager changing only through explicit start/stop commands across all front doors (GUI, tray, CLI, API) in Core dispatch. Process exits without a stop command leave desired_state = Running. Stopped-service diagnostics findings (web_stopped) and environment health warnings fire only when desired_state == Running and actual state is Stopped (suppressed during startup settling for autostart services and during state transitions). "Fix all" and ApplyWeb never start a stopped service. Findings auto-resolve and remove on service start without manual refresh. Suppressed desktop exit notifications for intentional stops. Updated data_models.txt, full_documentation.md, catalog.txt, and runtime.md. Files Processed remains 392, matching Files to Process.
 - [2026-11-04] fix(databases): Fixed stale zero import counts by applying database checkbox and select-all changes to the latest per-source state. Rapid selections remain in the visible count and import payload. Updated catalog.txt, relationships.txt, and full_documentation.md. Files Processed remains 282, matching Files to Process.
 - [2026-11-04] fix(databases): Kept Import visible while disabled until all selected folders are scanned and a database is selected. Added flushed, atomic safety backup finalization and durable per-database recovery records; startup restores interrupted replacements or removes partial new imports, retrying if recovery fails. Auto-detected sources remain available. Updated data_models.txt, catalog.txt, relationships.txt, and full_documentation.md. Files Processed remains 282, matching Files to Process.
