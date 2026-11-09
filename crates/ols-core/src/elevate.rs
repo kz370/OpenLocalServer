@@ -34,11 +34,16 @@ pub fn helper_path() -> Option<PathBuf> {
     // user's machine these paths don't exist and the lookup falls through to beside-exe.
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     if let Some(workspace_root) = manifest_dir.parent().and_then(|p| p.parent()) {
-        for profile in ["release", "debug"] {
-            let candidate = workspace_root.join("target").join(profile).join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
+        // Both profiles can hold a helper (a release build once, a debug one from
+        // `scripts/dev.bat` since): the most recently built one wins, so a stale release
+        // helper from an older version never shadows the fresh one.
+        let newest = ["release", "debug"]
+            .iter()
+            .map(|profile| workspace_root.join("target").join(profile).join(name))
+            .filter(|c| c.is_file())
+            .max_by_key(|c| std::fs::metadata(c).and_then(|m| m.modified()).ok());
+        if newest.is_some() {
+            return newest;
         }
     }
     // Beside the running executable: installed builds ship ols-helper.exe next to OLS.exe.
