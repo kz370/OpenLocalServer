@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils'
 import { SettingsDiagnosticsIcon } from '@/components/layout/SidebarIcons'
 import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
 import { SidebarItemsSettings } from '@/components/settings/SidebarItemsSettings'
-import { NAV_GROUPS, OnThisPage, SECTION_IDS, SectionTabs, SettingsSearch, jumpToSetting, navItemFor, type Section } from '@/components/settings/SettingsNav'
+import { NAV_GROUPS, OnThisPage, SECTION_IDS, SectionTabs, SettingsSearch, jumpToSetting, navItemFor, usePageHeadings, type Section } from '@/components/settings/SettingsNav'
 
 type SettingsDraft =
   | { section: 'general'; confirmExit: boolean; confirmStopAll: boolean; autoFixDiagnostics: boolean }
@@ -126,9 +126,10 @@ export function SettingsPage() {
   const [jumpTarget, setJumpTarget] = useState<{ title: string; n: number } | null>(null)
   const dirtyCount = useDirtyFormCount('app')
   const activeNavItem = navItemFor(section)
-  const pickSearchResult = useCallback(async (next: Section, title: string) => {
+  const pageHeadings = usePageHeadings(contentRef, section)
+  const pickSearchResult = useCallback(async (next: Section, title: string | null) => {
     await changeSection(next)
-    setJumpTarget((prev) => ({ title, n: (prev?.n ?? 0) + 1 }))
+    if (title) setJumpTarget((prev) => ({ title, n: (prev?.n ?? 0) + 1 }))
   }, [changeSection])
 
   // After a search pick, the target page may still be rendering: retry briefly until the row exists.
@@ -796,6 +797,17 @@ export function SettingsPage() {
         <p className="text-sm text-muted-foreground">OLS {version && `v${version}`}</p>
       </div>
       }
+      toolbar={pageHeadings.length >= 3 ? (
+        // Same columns as the content below (nav rail + page), so the bar lines up with the cards.
+        <div className="@container">
+          <div className="flex flex-row gap-4 @4xl:gap-6">
+            <div aria-hidden className="w-20 shrink-0 @4xl:w-56" />
+            <div className="min-w-0 max-w-3xl flex-1">
+              <OnThisPage root={contentRef} labels={pageHeadings} />
+            </div>
+          </div>
+        </div>
+      ) : undefined}
     >
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
@@ -841,7 +853,6 @@ export function SettingsPage() {
 
         <div ref={contentRef} className="flex min-w-0 max-w-3xl flex-1 flex-col gap-5">
           {activeNavItem && <SectionTabs item={activeNavItem} section={section} onChange={changeSection} />}
-          <OnThisPage root={contentRef} resetKey={section} />
           {section === 'appearance' && <AppearanceSettings />}
           {section === 'sidebar' && <SidebarItemsSettings />}
 

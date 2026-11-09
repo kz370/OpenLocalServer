@@ -1,5 +1,5 @@
 import { ListTree, Search, Wrench, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type RefObject } from 'react'
+import { useEffect, useMemo, useState, type ComponentType, type RefObject } from 'react'
 
 import {
   SettingsAppearanceIcon,
@@ -89,85 +89,159 @@ export function navItemFor(section: Section): NavItem | undefined {
   return NAV_GROUPS.flatMap((g) => g.items).find((i) => i.sections.some((s) => s.id === section))
 }
 
-/** What the search box can find: setting titles (exactly as shown on the page) and extra keywords. */
-const SEARCH_INDEX: { section: Section; title: string; keywords?: string }[] = [
-  { section: 'general', title: 'Administrator helper', keywords: 'admin hosts dns service windows' },
-  { section: 'general', title: 'Confirm before exit', keywords: 'quit close' },
-  { section: 'general', title: 'Confirm before Stop all', keywords: 'tray' },
-  { section: 'general', title: 'Diagnostics', keywords: 'auto fix problems' },
-  { section: 'general', title: 'Automatically fix safe problems', keywords: 'diagnostics repair' },
-  { section: 'editors', title: 'Editors', keywords: 'vscode open with ide add editor' },
-  { section: 'startup', title: 'Start with Windows', keywords: 'boot login autostart' },
-  { section: 'startup', title: 'Start minimized to the tray' },
-  { section: 'startup', title: 'Closing the window keeps running in the tray' },
-  { section: 'startup', title: 'Desktop notifications', keywords: 'toast alerts' },
-  { section: 'startup', title: 'Start these services automatically', keywords: 'autostart mysql nginx apache' },
-  { section: 'startup', title: 'Exit OpenLocalServer', keywords: 'quit' },
-  { section: 'appearance', title: 'Mode', keywords: 'dark light theme' },
+type SearchEntry = {
+  section: Section
+  /** What the result list shows. */
+  title: string
+  keywords?: string
+  /** Text to scroll to on the page when it differs from `title`; `null` opens the page without scrolling. */
+  match?: string | null
+}
+
+/**
+ * Every setting on every Settings page, by the title shown on the page. Pages render only while
+ * open, so this cannot be read from the DOM; keep it in step when a setting is added or renamed.
+ */
+const SETTING_ENTRIES: SearchEntry[] = [
+  // General
+  { section: 'general', title: 'Administrator helper', keywords: 'admin hosts dns service windows uac elevation' },
+  { section: 'general', title: 'Confirm before exit', keywords: 'quit close ask' },
+  { section: 'general', title: 'Confirm before Stop all', keywords: 'tray ask' },
+  { section: 'general', title: 'Diagnostics', keywords: 'doctor problems' },
+  { section: 'general', title: 'Automatically fix safe problems', keywords: 'diagnostics repair auto fix' },
+  { section: 'general', title: 'Local API', keywords: 'rest http token api key' },
+  { section: 'general', title: 'API port', match: 'Port', keywords: 'local api' },
+  { section: 'general', title: 'What the API may do', match: 'What it may do', keywords: 'read only operate permissions local api' },
+  { section: 'general', title: 'Windows integration, support and privacy', keywords: 'system telemetry analytics' },
+  { section: 'general', title: 'Explorer right-click menu', keywords: 'context menu shell windows explorer' },
+  { section: 'general', title: 'Support bundle', keywords: 'bug report logs zip doctor' },
+  // Startup & tray
+  { section: 'startup', title: 'Start with Windows', keywords: 'boot login autostart startup' },
+  { section: 'startup', title: 'Start minimized to the tray', keywords: 'hidden background' },
+  { section: 'startup', title: 'Closing the window keeps running in the tray', keywords: 'close to tray background' },
+  { section: 'startup', title: 'Desktop notifications', keywords: 'toast alerts crash' },
+  { section: 'startup', title: 'Start these services automatically', keywords: 'autostart mysql mariadb nginx apache redis' },
+  { section: 'startup', title: 'Exit OpenLocalServer', keywords: 'quit stop all' },
+  // Editors
+  { section: 'editors', title: 'Editors', keywords: 'vscode vs code cursor phpstorm ide open with add editor refresh' },
+  // Appearance
+  { section: 'appearance', title: 'Mode', keywords: 'dark light system theme' },
   { section: 'appearance', title: 'Presets', keywords: 'theme' },
   { section: 'appearance', title: 'Accent Color', keywords: 'colour primary' },
   { section: 'appearance', title: 'Sidebar Icon Style', keywords: 'icons colorful monochrome' },
-  { section: 'appearance', title: 'App Background', keywords: 'wallpaper image' },
-  { section: 'appearance', title: 'Live Preview Strip' },
-  { section: 'sidebar', title: 'Sidebar', keywords: 'hide show reorder items pages menu' },
-  { section: 'sidebar', title: 'Dashboard', keywords: 'security section hide show' },
-  { section: 'sites', title: 'Default sites folder', keywords: 'projects directory' },
-  { section: 'sites', title: 'Where new projects are created', keywords: 'quick apps clone import' },
-  { section: 'sites', title: 'Create domains automatically', keywords: 'https' },
-  { section: 'sites', title: 'Default top-level domain', keywords: 'tld local test localhost' },
-  { section: 'sites', title: 'Watch sites folder', keywords: 'detect new projects' },
-  { section: 'roots', title: 'Root folders', keywords: 'watched projects' },
-  { section: 'deleted', title: 'Hidden sites', keywords: 'excluded deleted ignored folders restore' },
-  { section: 'developer', title: 'Databases', keywords: 'migration guard backup' },
-  { section: 'developer', title: 'PHP dump viewer', keywords: 'dump dd debug' },
-  { section: 'mcp', title: 'MCP authentication', keywords: 'ai claude cursor token bearer expiry' },
-  { section: 'resources', title: 'Resources', keywords: 'cpu memory ram database application' },
-  { section: 'resources', title: 'Faster installs on Windows', keywords: 'performance defender exclusion speed' },
-  { section: 'backups', title: 'Backups', keywords: 'auto backup schedule restore snapshot' },
-  { section: 'backups', title: 'How often', keywords: 'schedule backup' },
+  { section: 'appearance', title: 'App Background', keywords: 'wallpaper image gradient angle' },
+  { section: 'appearance', title: 'Live Preview Strip', keywords: 'preview' },
+  { section: 'sidebar', title: 'Sidebar items', keywords: 'hide show pages menu shorter sidebar' },
+  { section: 'sidebar', title: 'Dockerize in right-click menus', keywords: 'docker context menu' },
+  { section: 'sidebar', title: 'Security section on the Dashboard', keywords: 'hide show dashboard vulnerabilities' },
+  // Sites
+  { section: 'sites', title: 'Sites and domains', keywords: 'domains' },
+  { section: 'sites', title: 'Default sites folder', keywords: 'projects directory www htdocs' },
+  { section: 'sites', title: 'Where new projects are created', keywords: 'quick apps git clone import location' },
+  { section: 'sites', title: 'Create domains automatically', keywords: 'auto domains https laragon' },
+  { section: 'sites', title: 'Default top-level domain', keywords: 'tld .local .test .localhost custom' },
+  { section: 'sites', title: 'Watch sites folder', keywords: 'detect new projects watcher' },
+  { section: 'roots', title: 'Root folders', keywords: 'watched projects add folder' },
+  { section: 'roots', title: 'Ignored folders', keywords: 'skip exclude hide folder' },
+  { section: 'deleted', title: 'Hidden sites', keywords: 'excluded deleted restore domain' },
+  // Developer tools
+  { section: 'developer', title: 'Databases', keywords: 'migration guard' },
+  { section: 'developer', title: 'Save the database before migrations', keywords: 'migration guard backup rewind laravel symfony django prisma' },
+  { section: 'developer', title: 'Migration backup size limit', match: 'Skip the copy when the database is bigger than (MB)', keywords: 'megabytes mb skip large database' },
+  { section: 'developer', title: 'PHP dump viewer', keywords: 'dump dd debug laravel symfony' },
+  // MCP / AI tools
+  { section: 'mcp', title: 'MCP authentication', keywords: 'ai claude cursor assistant' },
+  { section: 'mcp', title: 'Require MCP authentication', keywords: 'ai security' },
+  { section: 'mcp', title: 'Bearer token', keywords: 'mcp token secret key' },
+  { section: 'mcp', title: 'Token expiry', keywords: 'mcp hours expires' },
+  // Resources
+  { section: 'resources', title: 'Resources', keywords: 'limits' },
+  { section: 'resources', title: 'CPU', keywords: 'cpulimit processor cap limit' },
+  { section: 'resources', title: 'Database resources', keywords: 'memory ram mysql mariadb postgres' },
+  { section: 'resources', title: 'Application resources', keywords: 'memory ram' },
+  { section: 'resources', title: 'Faster installs on Windows', keywords: 'performance defender antivirus exclusion dev drive speed' },
+  // Backups
+  { section: 'backups', title: 'Back up automatically', keywords: 'auto backup schedule' },
+  { section: 'backups', title: 'What to back up', keywords: 'sites snapshots databases' },
+  { section: 'backups', title: 'Snapshot contents', keywords: 'project files env' },
+  { section: 'backups', title: 'Which sites', keywords: 'backup scope' },
+  { section: 'backups', title: 'How often', keywords: 'schedule cron period backup' },
   { section: 'backups', title: 'How many to keep', keywords: 'retention backup' },
-  { section: 'manual', title: 'User Manual', keywords: 'docs help release notes' },
-  { section: 'about', title: 'About', keywords: 'version updates check license' },
-  { section: 'general', title: 'API', keywords: 'local api' },
-  { section: 'general', title: 'System', keywords: 'info paths' },
+  // Help & About
+  { section: 'manual', title: 'User Manual', keywords: 'docs help guide' },
+  { section: 'manual', title: 'Release notes', match: null, keywords: 'changelog what is new' },
+  { section: 'about', title: 'Updates', keywords: 'check update download install version' },
+  { section: 'about', title: 'About OLS', match: null, keywords: 'version license gpl' },
 ]
 
-/** Scrolls to and briefly flashes the element on the page whose text is exactly `title`. */
+/** Every page and tab is searchable by its own name, too. */
+const SEARCH_INDEX: SearchEntry[] = [
+  ...NAV_GROUPS.flatMap((g) => g.items.flatMap((item) =>
+    item.sections.map((s) => ({ section: s.id, title: item.sections.length > 1 ? s.tab : item.label, keywords: `${item.label} ${g.label} page`, match: null })),
+  )),
+  ...SETTING_ENTRIES,
+]
+
+/** Where a result lives, e.g. "Sites › Root folders". */
+function locationOf(section: Section): string {
+  const item = navItemFor(section)
+  if (!item) return ''
+  const tab = item.sections.find((s) => s.id === section)
+  return item.sections.length > 1 && tab ? `${item.label} › ${tab.tab}` : item.label
+}
+
+/** The text an element shows itself, ignoring icons, badges and other nested elements. */
+function ownText(el: Element): string {
+  return Array.from(el.childNodes)
+    .filter((n) => n.nodeType === Node.TEXT_NODE)
+    .map((n) => n.textContent ?? '')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+/** Scrolls to and briefly flashes the element on the page that shows `title`. */
 export function jumpToSetting(root: HTMLElement | null, title: string): boolean {
   if (!root) return false
   const want = title.trim().toLowerCase()
-  const candidates = root.querySelectorAll<HTMLElement>('[data-card-title], h1, h2, h3, label, span, p, div')
-  for (const el of candidates) {
-    if (el.children.length > 2) continue
-    if ((el.textContent ?? '').trim().toLowerCase() !== want) continue
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    try {
-      el.animate(
-        [{ backgroundColor: 'color-mix(in srgb, var(--primary) 30%, transparent)' }, { backgroundColor: 'transparent' }],
-        { duration: 1800, easing: 'ease-out' },
-      )
-    } catch {
-      // animation is cosmetic
-    }
-    return true
+  const all = Array.from(root.querySelectorAll<HTMLElement>('*'))
+  const el =
+    all.find((n) => ownText(n) === want) ??
+    all.find((n) => n.children.length <= 2 && (n.textContent ?? '').trim().toLowerCase() === want)
+  if (!el) return false
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  try {
+    el.animate(
+      [{ backgroundColor: 'color-mix(in srgb, var(--primary) 30%, transparent)' }, { backgroundColor: 'transparent' }],
+      { duration: 1800, easing: 'ease-out' },
+    )
+  } catch {
+    // animation is cosmetic
   }
-  return false
+  return true
 }
 
 /** Search box for the settings sidebar. Wide layout only: the narrow icon rail has no room. */
-export function SettingsSearch({ onPick }: { onPick: (section: Section, title: string) => void }) {
+export function SettingsSearch({ onPick }: { onPick: (section: Section, match: string | null) => void }) {
   const [query, setQuery] = useState('')
   const results = useMemo(() => {
-    const tokens = query.toLowerCase().split(/\s+/).filter(Boolean)
+    const q = query.trim().toLowerCase()
+    const tokens = q.split(/\s+/).filter(Boolean)
     if (tokens.length === 0) return []
-    return SEARCH_INDEX.filter((e) => {
-      const hay = `${e.title} ${e.keywords ?? ''} ${navItemFor(e.section)?.label ?? ''}`.toLowerCase()
-      return tokens.every((t) => hay.includes(t))
-    }).slice(0, 8)
+    const scored: { e: SearchEntry; score: number }[] = []
+    for (const e of SEARCH_INDEX) {
+      const title = e.title.toLowerCase()
+      const hay = `${title} ${e.keywords ?? ''} ${locationOf(e.section)}`.toLowerCase()
+      if (!tokens.every((t) => hay.includes(t))) continue
+      const score = title.startsWith(q) ? 0 : title.includes(q) ? 1 : tokens.every((t) => title.includes(t)) ? 2 : 3
+      scored.push({ e, score })
+    }
+    return scored.sort((a, b) => a.score - b.score).map((s) => s.e)
   }, [query])
 
-  const pick = (e: { section: Section; title: string }) => {
-    onPick(e.section, e.title)
+  const pick = (e: SearchEntry) => {
+    onPick(e.section, e.match === undefined ? e.title : e.match)
     setQuery('')
   }
 
@@ -193,17 +267,22 @@ export function SettingsSearch({ onPick }: { onPick: (section: Section, title: s
         )}
       </div>
       {query && (
-        <div className="flex flex-col gap-0.5 rounded-lg border border-border/80 bg-card p-1">
+        <div className="flex max-h-[min(24rem,60vh)] flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-lg border border-border/80 bg-card p-1 ols-scroll-thin">
           {results.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No matching setting.</p>}
+          {results.length > 0 && (
+            <p className="px-2 pb-0.5 pt-1 text-[10px] text-muted-foreground">
+              {results.length} result{results.length === 1 ? '' : 's'}
+            </p>
+          )}
           {results.map((r) => (
             <button
               key={`${r.section}:${r.title}`}
               type="button"
               onClick={() => pick(r)}
-              className="flex flex-col items-start rounded-md px-2 py-1.5 text-left hover:bg-accent/50"
+              className="flex shrink-0 flex-col items-start rounded-md px-2 py-1.5 text-left hover:bg-accent/50"
             >
               <span className="text-xs font-medium text-foreground">{r.title}</span>
-              <span className="text-[10px] text-muted-foreground">{navItemFor(r.section)?.label}</span>
+              <span className="text-[10px] text-muted-foreground">{locationOf(r.section)}</span>
             </button>
           ))}
         </div>
@@ -238,6 +317,7 @@ export function SectionTabs({ item, section, onChange }: { item: NavItem; sectio
 
 /** A card title's own text, without badges or other elements nested inside it. */
 function titleText(el: HTMLElement): string {
+  if (el.dataset.tocLabel) return el.dataset.tocLabel
   const own = Array.from(el.childNodes)
     .filter((n) => n.nodeType === Node.TEXT_NODE)
     .map((n) => n.textContent ?? '')
@@ -247,19 +327,20 @@ function titleText(el: HTMLElement): string {
   return own || (el.textContent ?? '').trim()
 }
 
-/** "On this page" bar: jump between the cards of a long settings page; the card in view is highlighted. */
-export function OnThisPage({ root, resetKey }: { root: RefObject<HTMLElement | null>; resetKey: string }) {
-  const [labels, setLabels] = useState<string[]>([])
-  const [active, setActive] = useState(0)
+function headingElements(root: RefObject<HTMLElement | null>): HTMLElement[] {
+  return Array.from(root.current?.querySelectorAll<HTMLElement>('[data-card-title]') ?? [])
+}
 
-  const query = useCallback(() => Array.from(root.current?.querySelectorAll<HTMLElement>('[data-card-title]') ?? []), [root])
+/** Card titles on the current settings page, kept current as cards mount and change. */
+export function usePageHeadings(root: RefObject<HTMLElement | null>, resetKey: string): string[] {
+  const [labels, setLabels] = useState<string[]>([])
 
   useEffect(() => {
     const el = root.current
     if (!el) return
     let timer: ReturnType<typeof setTimeout> | undefined
     const scan = () => {
-      const next = query().map(titleText).filter(Boolean)
+      const next = headingElements(root).map(titleText).filter(Boolean)
       setLabels((prev) => (prev.length === next.length && prev.every((p, i) => p === next[i]) ? prev : next))
     }
     scan()
@@ -272,12 +353,22 @@ export function OnThisPage({ root, resetKey }: { root: RefObject<HTMLElement | n
       clearTimeout(timer)
       observer.disconnect()
     }
-  }, [root, query, resetKey])
+  }, [root, resetKey])
 
-  // Scroll-spy: the last card whose title has scrolled past the top third of the view is "current".
+  return labels
+}
+
+/**
+ * "On this page" bar: jump between the cards of a long settings page; the card in view is
+ * highlighted. Rendered outside the scrolling region, so content never passes underneath it.
+ */
+export function OnThisPage({ root, labels }: { root: RefObject<HTMLElement | null>; labels: string[] }) {
+  const [active, setActive] = useState(0)
+
+  // Scroll-spy: the first card title in the top 40% of the view is "current".
   useEffect(() => {
-    const titles = query()
-    if (titles.length < 3) return
+    const titles = headingElements(root)
+    if (titles.length === 0) return
     const visible = new Set<number>()
     const io = new IntersectionObserver(
       (entries) => {
@@ -292,13 +383,14 @@ export function OnThisPage({ root, resetKey }: { root: RefObject<HTMLElement | n
     )
     titles.forEach((t) => io.observe(t))
     return () => io.disconnect()
-  }, [query, labels])
+  }, [root, labels])
 
-  if (labels.length < 3) return null
+  useEffect(() => setActive(0), [labels])
+
   return (
     <nav
       aria-label="On this page"
-      className="sticky top-0 z-10 flex flex-wrap items-center gap-x-1 gap-y-1 rounded-xl border border-border/70 bg-background px-2.5 py-1.5 shadow-sm"
+      className="flex flex-wrap items-center gap-x-1 gap-y-1 rounded-xl border border-border/80 bg-card px-2.5 py-1.5"
     >
       <span className="flex shrink-0 items-center gap-1.5 pr-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         <ListTree className="size-3.5" /> On this page
@@ -311,7 +403,7 @@ export function OnThisPage({ root, resetKey }: { root: RefObject<HTMLElement | n
           aria-current={active === i ? 'true' : undefined}
           onClick={() => {
             setActive(i)
-            query()[i]?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+            headingElements(root)[i]?.scrollIntoView({ block: 'start', behavior: 'smooth' })
           }}
           className={cn(
             'max-w-[14rem] truncate rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
