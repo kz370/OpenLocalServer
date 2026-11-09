@@ -326,14 +326,12 @@ pub fn check_compose_path(path: &str) -> Result<PathBuf, CoreError> {
     Ok(p)
 }
 
+/// Registered project folders are stored canonicalized (long names), while a path handed
+/// in may use an 8.3 short name (`C:\Users\RUNNER~1\...` on CI runners) or a `\\?\`
+/// prefix. A plain string compare called those two spellings different folders, so the
+/// shared project comparison (which falls back to canonicalization) is used instead.
 fn same_path(a: &Path, b: &Path) -> bool {
-    let norm = |p: &Path| {
-        p.to_string_lossy()
-            .replace('\\', "/")
-            .trim_end_matches('/')
-            .to_lowercase()
-    };
-    norm(a) == norm(b)
+    crate::project::same_path(&a.to_string_lossy(), &b.to_string_lossy())
 }
 
 /// A compose file OLS knows as a stack, the only kind the editor may write: the same set the
@@ -971,6 +969,36 @@ mod tests {
 
     fn port(s: &str) -> Option<ComposePort> {
         parse_port(&Value::String(s.into()))
+    }
+
+    /// The project store keeps folders canonicalized, so a file handed in under another
+    /// spelling of the same folder (verbatim prefix, or an 8.3 short name on CI runners)
+    /// must still count as that project's file.
+    #[test]
+    fn project_file_matches_under_another_spelling_of_its_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("compose.yaml");
+        std::fs::write(&file, "services: {}\n").unwrap();
+        let canonical = std::fs::canonicalize(dir.path()).unwrap();
+        let stored = PathBuf::from(crate::project::strip_verbatim_prefix(
+            &canonical.display().to_string(),
+        ));
+        let none = std::collections::BTreeSet::new();
+        let stored = [stored];
+        assert!(is_known_stack_file(&file, &stored, &none, &[]));
+        assert!(is_known_stack_file(
+            &canonical.join("compose.yaml"),
+            &stored,
+            &none,
+            &[]
+        ));
+        let other = tempfile::tempdir().unwrap();
+        assert!(!is_known_stack_file(
+            &file,
+            &[other.path().to_path_buf()],
+            &none,
+            &[]
+        ));
     }
 
     #[test]

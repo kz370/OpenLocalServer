@@ -34,15 +34,15 @@ across origins.
 asset *name* is the only thing that needs changing, in four places:
 
 - the nav **Download** button
-- the hero **Download for Windows** button, and the `OLS-2.11.0-setup.exe`,
+- the hero **Download for Windows** button, and the `OLS-2.12.0-setup.exe`,
   portable-zip and checksum links in the note under it
 - the **Verify a download** action in the open-source section
 - the final call to action, and the copy in steps 1 and the "Download for Windows"
   buttons
 
-The same version appears in the "v2.11.0" fact badge and in the footer. A grep
-for `2\.11\.0` on `index.html` finds every release-specific reference. The
-release highlights are based on `release-notes/v2.11.0.md`.
+The same version appears in the "v2.12.0" fact badge and in the footer. A grep
+for `2\.12\.0` on `index.html` finds every release-specific reference. The
+release highlights are based on `release-notes/v2.12.0.md`.
 
 ## Rules for changing it
 

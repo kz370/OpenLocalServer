@@ -195,6 +195,10 @@
               <h3>Free up space and sleeping services</h3>
               <p>Clear old <code>node_modules</code>, <code>vendor</code> and build caches, and let MariaDB, PostgreSQL, Redis, MongoDB and Memcached sleep when unused (off by default).</p>
             </article>
+            <article class="card reveal">
+              <h3>Move in from Laragon, XAMPP or WampServer</h3>
+              <p>The import dialog lists their sites and adds the ones you pick, with trusted HTTPS, without changing their files. Settings → Performance can also exclude project folders from Windows Defender's scan, and explains Dev Drive.</p>
+            </article>
           </div>
         </div>
       </section>
@@ -727,6 +731,11 @@
 <span class="k">olsc</span> project list                <span class="c"># registered projects</span>
 <span class="k">olsc</span> service list                <span class="c"># MariaDB, Postgres, Redis, Mailpit…</span>
 <span class="k">olsc</span> runtime list                <span class="c"># installed PHP and Node versions</span>
+<span class="k">olsc</span> runtime eol                 <span class="c"># versions without security fixes</span>
+<span class="k">olsc</span> project audit my-site       <span class="c"># Composer, npm, pnpm vulnerabilities</span>
+<span class="k">olsc</span> project reclaim <span class="p">--days</span> 90   <span class="c"># rebuildable folders in idle projects</span>
+<span class="k">olsc</span> php check-upgrade my-site 8.4 <span class="c"># what breaks before switching PHP</span>
+<span class="k">olsc</span> db guard list               <span class="c"># database copies saved before migrations</span>
 
 <span class="k">olsc</span> tunnel start <span class="p">--provider</span> cloudflared <span class="p">--port</span> 443
 <span class="k">olsc</span> worker run <span class="p">--queue</span> default

@@ -39,16 +39,20 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: false
 
+# Every JavaScript action below is pinned to a major whose action.yml declares
+# `using: node24` (checkout@v7, setup-node@v7, upload-artifact@v7, download-artifact@v8,
+# rust-cache@v2; rust-toolchain is a composite). No FORCE_JAVASCRIPT_ACTIONS_TO_NODE24
+# override: that flag only hid the Node 20 deprecation warning instead of fixing it, so
+# an action that falls back to Node 20 now shows up as a warning again.
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   test:
     name: Test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Tests stay on Windows because they are Windows tests: temp paths, the hosts file
@@ -65,14 +69,14 @@ jobs:
       run:
         shell: cmd
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - name: Install Inno Setup
@@ -116,7 +120,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # The full history so the tag is a real ref rather than a detached name.
           fetch-depth: 0
