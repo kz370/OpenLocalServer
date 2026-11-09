@@ -153,6 +153,31 @@ impl WebServer for Nginx {
             out.push_str(&render_body(&public));
             out.push_str("}\n");
         }
+        // §178: this site alone on its own port, for a phone that asks by IP address.
+        if let Some(lan) = site.lan {
+            out.push_str(&format!("\n# Open on my phone: port {}\n", lan.port));
+            out.push_str("server {\n");
+            match (&site.tls, lan.https) {
+                (Some(tls), true) => {
+                    out.push_str(&format!("    listen 0.0.0.0:{} ssl;\n", lan.port));
+                    out.push_str(&format!(
+                        "    ssl_certificate \"{}\";\n",
+                        cfg_path(&tls.cert)
+                    ));
+                    out.push_str(&format!(
+                        "    ssl_certificate_key \"{}\";\n",
+                        cfg_path(&tls.key)
+                    ));
+                    out.push_str("    ssl_protocols TLSv1.2 TLSv1.3;\n");
+                    out.push_str(&body);
+                }
+                _ => {
+                    out.push_str(&format!("    listen 0.0.0.0:{};\n", lan.port));
+                    out.push_str(&render_body(&site.lan_plain()));
+                }
+            }
+            out.push_str("}\n");
+        }
         out
     }
 
@@ -407,6 +432,7 @@ mod tests {
             path_prefix: None,
             aliases: Vec::new(),
             missing_folder: false,
+            lan: None,
         }
     }
 
@@ -638,5 +664,43 @@ mod tests {
         assert!(cfg.contains("server 127.0.0.1:10811;"));
         assert!(cfg.contains("include \"C:/ols/web/nginx/sites/*.conf\";"));
         assert!(cfg.contains("default_server"));
+    }
+
+    #[test]
+    fn a_shared_site_gets_its_own_lan_port() {
+        let plain = Nginx.render_site(&site(Backend::Static, true, true), PORTS);
+        assert!(!plain.contains("8700"), "not shared: unchanged");
+
+        let mut s = site(Backend::Static, true, true);
+        s.lan = Some(crate::web::LanListen {
+            port: 8700,
+            https: true,
+        });
+        let out = Nginx.render_site(&s, PORTS);
+        assert!(
+            out.starts_with(&plain),
+            "the normal blocks stay as they were"
+        );
+        let lan = &out[plain.len()..];
+        assert!(lan.contains("listen 0.0.0.0:8700 ssl;"), "{lan}");
+        assert!(lan.contains("ssl_certificate \"C:/c/cert.pem\";"));
+        assert!(
+            !lan.contains("server_name"),
+            "the port alone picks the site"
+        );
+        assert!(
+            !lan.contains("return 301"),
+            "never redirected to the .test name"
+        );
+
+        s.lan = Some(crate::web::LanListen {
+            port: 8701,
+            https: false,
+        });
+        let out = Nginx.render_site(&s, PORTS);
+        let lan = &out[plain.len()..];
+        assert!(lan.contains("listen 0.0.0.0:8701;"), "{lan}");
+        assert!(!lan.contains("ssl"), "{lan}");
+        assert!(!lan.contains("return 301"), "{lan}");
     }
 }

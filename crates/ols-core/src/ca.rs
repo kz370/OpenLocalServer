@@ -133,13 +133,17 @@ impl LocalCa {
         let mut dn = DistinguishedName::new();
         dn.push(DnType::CommonName, first.as_str());
         leaf_params.distinguished_name = dn;
+        // An IP address (a phone opening a shared site by IP, §178) is an IP entry; a DNS
+        // name entry holding an IP is not accepted by browsers.
         leaf_params.subject_alt_names = names
             .iter()
-            .map(|n| {
-                n.as_str()
+            .map(|n| match n.parse::<std::net::IpAddr>() {
+                Ok(ip) => Ok(SanType::IpAddress(ip)),
+                Err(_) => n
+                    .as_str()
                     .try_into()
                     .map(SanType::DnsName)
-                    .map_err(|e| format!("{e:?}"))
+                    .map_err(|e| format!("{e:?}")),
             })
             .collect::<Result<_, _>>()?;
         leaf_params.key_usages = vec![

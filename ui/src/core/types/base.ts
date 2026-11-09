@@ -537,6 +537,12 @@ export interface LanInfo {
   url: string | null
   qr_svg: string | null
   warnings: string[]
+  /** The site's own LAN port while shared. */
+  port?: number | null
+  /** The phone link is HTTPS (needs OLS's certificate on the phone), not plain HTTP. */
+  https?: boolean
+  /** The site has HTTPS, so the phone link can use it. */
+  can_https?: boolean
 }
 
 /** §179 Sleep when unused, per service. */

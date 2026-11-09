@@ -99,6 +99,8 @@ export interface DomainSummary {
   broadcast_url?: string | null
   /** Additional domain aliases pointing to this site. */
   aliases?: string[]
+  /** §178: shared on the local network (Open on my phone). */
+  lan?: boolean
   /** Dynamic DNS provider: cloudflare, duckdns, or custom. */
   ddns_provider?: string | null
   /** Last detected public IP synced to DNS. */

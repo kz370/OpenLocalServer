@@ -1,5 +1,5 @@
 import { Copy, Smartphone } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
@@ -8,6 +8,7 @@ import { Dialog } from '@/components/ui/dialog'
 import { FormSection, SwitchRow } from '@/components/ui/form'
 import { type Diagnostic, type LanInfo, runCommand } from '@/core'
 import { asDiagnostic } from '@/lib/diagnostic'
+import { takePhoneFocus } from '@/lib/phoneFocus'
 
 /** An SVG string from the core as an image. Never injected as HTML. */
 function Qr({ svg, label }: { svg: string; label: string }) {
@@ -97,6 +98,13 @@ export function PhoneSection({ hostname }: { hostname: string }) {
   const [busy, setBusy] = useState(false)
   const [certOpen, setCertOpen] = useState(false)
   const [error, setError] = useState<Diagnostic | null>(null)
+  const anchor = useRef<HTMLDivElement>(null)
+
+  // Scroll once the QR has loaded, so the section is its final height when it lands in view.
+  useEffect(() => {
+    if (!info || !takePhoneFocus(hostname)) return
+    anchor.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [hostname, info])
 
   const load = useCallback(async () => {
     try {
@@ -123,12 +131,39 @@ export function PhoneSection({ hostname }: { hostname: string }) {
     }
   }
 
+  async function setHttp(http: boolean) {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await runCommand({ type: 'set_site_lan_http', hostname, http })
+      if (r.type === 'lan_info') setInfo(r.info)
+    } catch (e) {
+      setError(asDiagnostic(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
-    <FormSection title="Open on my phone" hint="Reach this site from a phone on the same Wi-Fi, with working HTTPS.">
+    <div ref={anchor} className="scroll-mt-4" />
+    <FormSection title="Open on my phone" hint="Reach this site from a phone on the same Wi-Fi. No internet needed.">
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
       <div className="flex flex-col gap-3">
-        <SwitchRow checked={info?.on ?? false} disabled={busy || !info} onChange={(v) => void toggle(v)} title="Share this site on my network" hint="Adds a second name for the site that your phone can look up." />
+        <SwitchRow checked={info?.on ?? false} disabled={busy || !info} onChange={(v) => void toggle(v)} title="Share this site on my network" hint="Gives the site its own port on this computer's network address. Scan the QR code on the phone." />
+        {info?.on && (
+          <SwitchRow
+            checked={info.https ?? false}
+            disabled={busy || !info.can_https}
+            onChange={(v) => void setHttp(!v)}
+            title="Use HTTPS"
+            hint={
+              info.can_https
+                ? 'On: the phone installs the OLS certificate once and gets a secure page (camera, location and secure cookies work). Off: plain HTTP, nothing to install, but the browser marks the page not secure.'
+                : 'This site has no HTTPS, so the phone link is plain HTTP. Turn on HTTPS for the site to use it here.'
+            }
+          />
+        )}
         {info?.on && info.url && (
           <div className="flex flex-wrap items-center gap-4">
             {info.qr_svg && <Qr svg={info.qr_svg} label="QR code for the site address" />}
@@ -137,9 +172,11 @@ export function PhoneSection({ hostname }: { hostname: string }) {
               <Button size="sm" variant="ghost" className="mt-1 h-7 px-2 text-xs" onClick={() => void navigator.clipboard.writeText(info.url ?? '')}>
                 <Copy className="size-3.5" /> Copy address
               </Button>
-              <Button size="sm" variant="secondary" className="mt-1 ml-2 h-7 px-2 text-xs" onClick={() => setCertOpen(true)}>
-                <Smartphone className="size-3.5" /> Install certificate on phone…
-              </Button>
+              {info.https && (
+                <Button size="sm" variant="secondary" className="mt-1 ml-2 h-7 px-2 text-xs" onClick={() => setCertOpen(true)}>
+                  <Smartphone className="size-3.5" /> Install certificate on phone…
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -150,7 +187,7 @@ export function PhoneSection({ hostname }: { hostname: string }) {
         ))}
         {info?.on && (
           <p className="text-xs text-muted-foreground">
-            The address (the site's name plus your computer's address) is looked up through a public DNS service, sslip.io. Some routers block such answers ("DNS rebinding protection"). If the page does not open, allow sslip.io in the router or Pi-hole, or use a Tunnel instead.
+            The phone and this computer must be on the same Wi-Fi. If Windows asks, allow the web server on private networks. Apps that send you to their own address (for example WordPress Site URL or a Laravel APP_URL redirect) will jump to the .test name, which the phone cannot open.
           </p>
         )}
       </div>

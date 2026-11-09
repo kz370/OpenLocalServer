@@ -203,6 +203,46 @@ pub fn query_state() -> DefenderState {
     }
 }
 
+/// Parses `... AntiVirusProduct | Select-Object -ExpandProperty displayName | ConvertTo-Json`:
+/// one product is a JSON string, several are an array. Microsoft Defender itself is left out,
+/// and names are de-duplicated (Security Center can list one product twice).
+pub fn parse_antivirus(stdout: &str) -> Vec<String> {
+    let names: Vec<String> = match serde_json::from_str::<serde_json::Value>(stdout.trim()) {
+        Ok(serde_json::Value::String(s)) => vec![s],
+        Ok(serde_json::Value::Array(a)) => a
+            .into_iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for n in names {
+        let n = n.trim().to_string();
+        let lower = n.to_ascii_lowercase();
+        let is_defender =
+            lower.contains("windows defender") || lower.contains("microsoft defender");
+        if !n.is_empty() && !is_defender && !out.iter().any(|o| o.eq_ignore_ascii_case(&n)) {
+            out.push(n);
+        }
+    }
+    out
+}
+
+/// Antivirus products other than Defender that Windows Security Center knows (Bitdefender,
+/// Avast, Kaspersky, ...). OLS cannot change their settings; the card only names them so the
+/// user knows where the exclusions have to go. Empty when Security Center is not there
+/// (Windows Server) or does not answer.
+pub fn query_other_antivirus() -> Vec<String> {
+    let out = run_ps(
+        "(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct -ErrorAction Stop | Select-Object -ExpandProperty displayName | ConvertTo-Json)",
+    );
+    if out.success() {
+        parse_antivirus(&out.stdout)
+    } else {
+        Vec::new()
+    }
+}
+
 fn file_system(letter: char) -> String {
     let out = run_ps(&format!(
         "(Get-Volume -DriveLetter {letter}).FileSystemType"
@@ -260,6 +300,7 @@ impl Inner {
             excluded_by_ols: self.excluded_by_ols(),
             suggestions,
             dev_drive,
+            other_antivirus: query_other_antivirus(),
         }
     }
 
@@ -326,11 +367,30 @@ pub struct DefenderStatus {
     pub excluded_by_ols: Vec<String>,
     pub suggestions: Vec<String>,
     pub dev_drive: Vec<DevDriveInfo>,
+    /// Other antivirus products installed (names from Windows Security Center).
+    #[serde(default)]
+    pub other_antivirus: Vec<String>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn other_antivirus_names_leave_defender_out() {
+        assert_eq!(
+            parse_antivirus(r#""Bitdefender Antivirus""#),
+            vec!["Bitdefender Antivirus"]
+        );
+        assert_eq!(
+            parse_antivirus(
+                r#"["Windows Defender","Avast Antivirus","avast antivirus","Microsoft Defender Antivirus"]"#
+            ),
+            vec!["Avast Antivirus"]
+        );
+        assert!(parse_antivirus("").is_empty());
+        assert!(parse_antivirus("not json").is_empty());
+    }
 
     #[test]
     fn dangerous_paths_are_never_valid() {

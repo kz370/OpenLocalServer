@@ -122,10 +122,11 @@ impl CertificateManager {
                 names.push(clean.to_string());
             }
         }
-        // §178: the phone-friendly name, only while sharing is on.
-        if let (true, Some(lan)) = (domain.lan, domain.lan_alias.as_deref()) {
-            if !names.contains(&lan.to_string()) {
-                names.push(lan.to_string());
+        // §178: a phone opens the site by this computer's LAN IP, so while it is shared over
+        // HTTPS the certificate covers that IP too (an IP address entry, not a DNS name).
+        if let (true, false, Some(ip)) = (domain.lan, domain.lan_http, domain.lan_ip.as_deref()) {
+            if !names.contains(&ip.to_string()) {
+                names.push(ip.to_string());
             }
         }
         if domain.wildcard {
@@ -381,7 +382,9 @@ mod tests {
             lets_encrypt_email: None,
             auto_broadcast: false,
             lan: false,
-            lan_alias: None,
+            lan_ip: None,
+            lan_port: None,
+            lan_http: false,
             broadcast_provider: None,
             ..Default::default()
         }

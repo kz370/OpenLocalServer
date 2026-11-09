@@ -227,7 +227,7 @@ Grab the latest installer (`OLS-2.12.0-setup.exe`) from the [Releases page](http
 - **Migration guard:** before a migration (Laravel, Symfony, Django, Prisma, Sequelize, Alembic, WP-CLI) OLS saves the project's database; **Rewind** puts it back. `olsc db guard list|rewind`, MCP `ols_list_migration_snapshots`.
 - **Database per Git branch:** each branch gets its own copy of the database; switching branches switches `.env` (project Git tab, or `olsc db branch`).
 - **Pull a server database:** copy staging or production over SSH with fake emails, names, phones and passwords (project Backups tab, or `olsc db pull`).
-- **Open a site on your phone:** scan a QR code on the same Wi-Fi and install OLS's certificate once (guided) for working HTTPS (site settings, Open on my phone). See [Open a Site on Your Phone](#open-a-site-on-your-phone).
+- **Open a site on your phone:** scan a QR code on the same Wi-Fi; HTTPS (install OLS's certificate once, guided) or plain HTTP (site settings or the Sites right-click menu). Uses your PC's address and a port per site, so no internet is needed. See [Open a Site on Your Phone](#open-a-site-on-your-phone).
 - **Services sleep when unused:** MariaDB, PostgreSQL, Redis, MongoDB and Memcached stop after a while without connections and start again when an app connects (Services page, off by default).
 - **Import sites from Laragon, XAMPP and WampServer:** the import dialog lists their sites and adds the ones you pick, with trusted HTTPS; the old tools are not changed.
 
@@ -245,7 +245,7 @@ Docker is optional: OLS never installs it, and nothing Docker-related runs until
 - **Dockerize a project:** one click makes a Dockerfile, a compose file and a `.dockerignore` for a PHP, Node, Python, Go, Rust, Ruby, Java, .NET or static project. The project is copied into the image, Development mode syncs your edits with `docker compose watch`, Production mode builds a lean non-root image, and the services it finds (database, Redis, queue, mail, search) are added as pinned images with generated passwords, after showing what OLS detected and the files. They are a starting point, not a guaranteed setup, and nothing is overwritten. Right-click a project or site → **Dockerize…** (hide it in Settings → Sidebar).
 - **Connect to OLS:** One switch per stack lets its containers open your OLS sites by name, trust OLS's local HTTPS certificate (the certificate only, mounted read-only), and reach OLS's MariaDB, Redis and Mailpit through `host.docker.internal`. OLS adds a generated override when it runs the stack; your compose file is not changed.
 - **A site for any container:** **Create site** gives a container a local domain with trusted HTTPS (a reverse proxy to its published port). If the container comes back on another port, the site follows it.
-- **Faster installs on Windows:** optional, consent-based Windows Defender exclusions for project folders (Settings → Performance), plus a Dev Drive hint. The elevated helper validates every path.
+- **Faster installs on Windows:** optional, consent-based Windows Defender exclusions for project folders (Settings → Performance), plus a Dev Drive hint. The elevated helper validates every path. With another antivirus (Bitdefender, Avast, Kaspersky, ...) the card names it and lists the folders to exclude there yourself.
 
 ### 📊 Dashboard & Monitoring
 
@@ -439,30 +439,30 @@ Once connected, you can ask your AI assistant natural questions:
 
 ### Open a Site on Your Phone
 
-Test a site on a real phone, with working HTTPS, over your own Wi-Fi.
+Test a site on a real phone over your own Wi-Fi. No internet needed.
 
 **How it works**
 
 - A phone cannot use OLS's local DNS or your PC's hosts file, so `shop.test` means nothing to it.
-- When you turn it on for a site, OLS gives the site a second name such as `shop-test.192-168-1-5.sslip.io`. [sslip.io](https://sslip.io) is a free public DNS service that answers that name with the IP inside it (`192.168.1.5`, your PC on the Wi-Fi).
-- The QR code holds that address. The site's certificate covers the name only while phone access is on.
+- When you share a site, OLS gives it a port of its own (8700 to 8999) on your PC's network address. The phone opens `https://192.168.1.5:8700/`: nothing is looked up, so it works on a Wi-Fi with no internet.
+- The QR code holds that address. If your PC's address changes, OLS updates the link by itself.
 
-**What needs internet**
+**HTTPS or HTTP**
 
-| Step | Internet needed? |
-| --- | --- |
-| Making the link and QR code | No, it is built on your PC |
-| Downloading the certificate | No, the phone gets it from your PC over Wi-Fi |
-| Opening the site | Yes, a little: the phone looks the name up through sslip.io. The page itself still loads from your PC |
+| Use HTTPS | What the phone needs | What you get |
+| --- | --- | --- |
+| On (default when the site has HTTPS) | OLS's certificate, installed once (below) | A secure page: camera, location and secure cookies work |
+| Off | Nothing | Plain HTTP: the browser marks the page not secure and blocks the camera, location and service workers |
 
-> **Site does not open on the phone?** Check that the phone and the PC are on the same Wi-Fi and the phone has internet. Some routers block DNS answers that point to home addresses (`192.168.x.x`), often called *DNS rebinding protection*; allow `sslip.io` there, or turn it off for testing.
+> **Site does not open on the phone?** Check that the phone and the PC are on the same Wi-Fi, that Windows calls the network Private (not Public), and that Windows Firewall allows the web server. Apps that redirect to their own address (WordPress *Site URL*, a Laravel `APP_URL` redirect) send the phone to the `.test` name, which it cannot open.
 
 **Steps**
 
 1. Put the phone on the same Wi-Fi as the PC.
-2. In OLS, open the site's settings, find **Open on my phone** and turn on **Share this site on my network**.
-3. Scan the site's QR code with the phone.
-4. Install OLS's certificate once (below), then open the site again: it shows a lock with no warning.
+2. In OLS, right-click the site on the **Sites** page → **Share this site on my network**. (Or open the site's settings, find **Open on my phone** and turn on **Share this site on my network**.)
+3. Choose **Use HTTPS** on or off.
+4. Scan the site's QR code with the phone.
+5. With HTTPS: install OLS's certificate once (below), then open the site again: it shows a lock with no warning.
 
 **Install the certificate on Android**
 

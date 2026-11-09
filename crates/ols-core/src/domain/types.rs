@@ -207,12 +207,19 @@ pub struct Domain {
     /// Additional domain names (aliases) mapped to this same site.
     #[serde(default)]
     pub aliases: Vec<String>,
-    /// §178: also answer to a name a phone on the same network can look up.
+    /// §178: also serve this site to phones on the same network, at
+    /// `<scheme>://<lan_ip>:<lan_port>/`. No DNS name and no internet needed.
     #[serde(default)]
     pub lan: bool,
-    /// The LAN name OLS computed (`<site>.<ip>.sslip.io`); never typed by the user.
+    /// This computer's private LAN address when the site was last shared (computed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lan_alias: Option<String>,
+    pub lan_ip: Option<String>,
+    /// The site's own LAN port, picked once when sharing is turned on and then kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lan_port: Option<u16>,
+    /// Serve the LAN port over plain HTTP (no certificate on the phone) instead of HTTPS.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub lan_http: bool,
     /// Dynamic DNS provider ("cloudflare", "duckdns", "custom", or None).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ddns_provider: Option<String>,
@@ -294,7 +301,9 @@ impl Default for Domain {
             lets_encrypt_email: None,
             auto_broadcast: false,
             lan: false,
-            lan_alias: None,
+            lan_ip: None,
+            lan_port: None,
+            lan_http: false,
             broadcast_provider: None,
             aliases: Vec::new(),
             ddns_provider: None,

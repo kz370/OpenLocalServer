@@ -204,6 +204,9 @@ pub struct DomainSummary {
     /// Additional domain aliases pointing to this site.
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// §178: shared on the local network (Open on my phone).
+    #[serde(default)]
+    pub lan: bool,
     /// Dynamic DNS provider: "cloudflare", "duckdns", "custom", or None.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ddns_provider: Option<String>,

@@ -258,6 +258,29 @@ pub struct SiteSpec {
     pub aliases: Vec<String>,
     /// True when the document root folder is missing or offline on disk (and not a proxy site).
     pub missing_folder: bool,
+    /// §178 Open on my phone: one more listener on its own port, reached as
+    /// `<scheme>://<this computer's LAN IP>:<port>/`. No name is needed, so it works without
+    /// internet; the port alone picks the site. `None` renders exactly as before.
+    pub lan: Option<LanListen>,
+}
+
+/// The extra per-site listener for phones on the same network (§178).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LanListen {
+    pub port: u16,
+    /// HTTPS with the site's certificate (which then also covers the LAN IP). Only set when
+    /// the site has a certificate; otherwise the listener is plain HTTP.
+    pub https: bool,
+}
+
+impl SiteSpec {
+    /// The site as served on its LAN port over plain HTTP: no TLS, no redirect to HTTPS.
+    pub fn lan_plain(&self) -> SiteSpec {
+        let mut plain = self.clone();
+        plain.tls = None;
+        plain.redirect_https = false;
+        plain
+    }
 }
 
 /// Renders an in-browser friendly HTML page returned as 503 when a project's document root is missing or offline.

@@ -119,6 +119,27 @@ impl WebServer for Caddy {
             out.push_str(&body(&public));
             out.push_str("}\n");
         }
+        // §178: this site alone on its own port, for a phone that asks by IP address. With no
+        // name in the request, Caddy picks the certificate by the IP it was reached on.
+        if let Some(lan) = site.lan {
+            out.push_str(&format!("\n# Open on my phone: port {}\n", lan.port));
+            match (&site.tls, lan.https) {
+                (Some(tls), true) => {
+                    out.push_str(&format!("https://:{} {{\n", lan.port));
+                    out.push_str(&format!(
+                        "    tls \"{}\" \"{}\"\n",
+                        cfg_path(&tls.cert),
+                        cfg_path(&tls.key)
+                    ));
+                    out.push_str(&body(site));
+                }
+                _ => {
+                    out.push_str(&format!("http://:{} {{\n", lan.port));
+                    out.push_str(&body(&site.lan_plain()));
+                }
+            }
+            out.push_str("}\n");
+        }
         out
     }
 
@@ -296,6 +317,7 @@ mod tests {
             path_prefix: None,
             aliases: Vec::new(),
             missing_folder: false,
+            lan: None,
         }
     }
 
@@ -455,5 +477,37 @@ mod tests {
             binary: "C:/caddy/caddy.exe".into(),
         };
         assert_ne!(admin_addr(&layout), admin_addr(&other_install));
+    }
+
+    #[test]
+    fn a_shared_site_gets_its_own_lan_port() {
+        let ports = Ports {
+            http: 80,
+            https: 443,
+        };
+        let plain = Caddy.render_site(&site(Backend::Static, true, true), ports);
+        let mut s = site(Backend::Static, true, true);
+        s.lan = Some(crate::web::LanListen {
+            port: 8700,
+            https: true,
+        });
+        let out = Caddy.render_site(&s, ports);
+        assert!(
+            out.starts_with(&plain),
+            "the normal site blocks stay as they were"
+        );
+        let lan = &out[plain.len()..];
+        assert!(lan.contains("https://:8700 {"), "{lan}");
+        assert!(lan.contains("tls \"C:/c/cert.pem\""), "{lan}");
+        assert!(!lan.contains("redir"), "never redirected to the .test name");
+
+        s.lan = Some(crate::web::LanListen {
+            port: 8701,
+            https: false,
+        });
+        let out = Caddy.render_site(&s, ports);
+        let lan = &out[plain.len()..];
+        assert!(lan.contains("http://:8701 {"), "{lan}");
+        assert!(!lan.contains("tls ") && !lan.contains("redir"), "{lan}");
     }
 }

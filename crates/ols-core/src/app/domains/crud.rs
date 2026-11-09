@@ -252,6 +252,7 @@ impl Inner {
                     auto_broadcast: d.auto_broadcast,
                     broadcast_url,
                     aliases: d.aliases.clone(),
+                    lan: d.lan,
                     ddns_provider: d.ddns_provider.clone(),
                     ddns_last_ip: d.ddns_last_ip.clone(),
                     proxy_target: d.kind.upstream_url(),

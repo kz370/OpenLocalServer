@@ -100,6 +100,7 @@ impl Core {
                         excluded_by_ols: s.excluded_by_ols,
                         suggestions: s.suggestions,
                         dev_drive: s.dev_drive,
+                        other_antivirus: s.other_antivirus,
                     })
                 }
                 C::AddDefenderExclusion { path } => {
@@ -111,6 +112,7 @@ impl Core {
                         excluded_by_ols: s.excluded_by_ols,
                         suggestions: s.suggestions,
                         dev_drive: s.dev_drive,
+                        other_antivirus: s.other_antivirus,
                     })
                 }
                 C::RemoveDefenderExclusion { path } => {
@@ -122,6 +124,7 @@ impl Core {
                         excluded_by_ols: s.excluded_by_ols,
                         suggestions: s.suggestions,
                         dev_drive: s.dev_drive,
+                        other_antivirus: s.other_antivirus,
                     })
                 }
                 C::CheckPhpUpgrade { hostname, target } => {

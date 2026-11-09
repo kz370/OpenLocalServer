@@ -262,6 +262,8 @@ pub enum CoreResponse {
         excluded_by_ols: Vec<String>,
         suggestions: Vec<String>,
         dev_drive: Vec<crate::defender::DevDriveInfo>,
+        #[serde(default)]
+        other_antivirus: Vec<String>,
     },
     SiteImportCandidates {
         candidates: Vec<crate::migrate_sites::SiteImportCandidate>,

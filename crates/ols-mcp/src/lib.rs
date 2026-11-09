@@ -1448,7 +1448,11 @@ fn guard_raw_command(cmd: CoreCommand) -> Result<CoreCommand, String> {
             "ols_run_command cannot change which services sleep when unused: stopping databases              is a decision for a person in OLS (Services page)."
                 .to_string(),
         ),
-        C::SetSiteLan { .. } | C::GetLanInfo { .. } | C::StartCaShare | C::StopCaShare => Err(
+        C::SetSiteLan { .. }
+        | C::GetLanInfo { .. }
+        | C::SetSiteLanHttp { .. }
+        | C::StartCaShare
+        | C::StopCaShare => Err(
             "ols_run_command cannot share a site on the network or serve the local certificate:              that opens this computer to other devices, so a person has to do it in OLS (site settings)."
                 .to_string(),
         ),

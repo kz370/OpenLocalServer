@@ -1,4 +1,4 @@
-import { AlertTriangle, ExternalLink, ShieldOff } from 'lucide-react'
+import { AlertTriangle, Copy, ExternalLink, ShieldOff } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -15,6 +15,27 @@ interface Status {
   excluded: string[]
   suggestions: string[]
   devDrive: DevDriveInfo[]
+  otherAv: string[]
+}
+
+/**
+ * Where exclusions usually live in common antivirus apps. OLS cannot change these apps, and
+ * menus move between versions, so this is a hint, matched on the product name.
+ */
+const AV_HINTS: [RegExp, string][] = [
+  [/bitdefender/i, 'Protection → Antivirus → Open → Settings → Manage exceptions → Add an exception.'],
+  [/avast|avg/i, 'Menu → Settings → General → Exceptions → Add exception.'],
+  [/kaspersky/i, 'Settings → Security settings → Threats and exclusions → Manage exclusions → Add.'],
+  [/eset/i, 'Setup → Advanced setup → Detection engine → Exclusions → Performance exclusions → Edit → Add.'],
+  [/norton/i, 'Settings → Antivirus → Scans and Risks → Items to Exclude from Scans → Configure → Add folders.'],
+  [/mcafee/i, 'My Protection → Real-Time Scanning → Excluded files → Add file / folder.'],
+  [/malwarebytes/i, 'Settings → Allow List → Add → Allow a file or folder.'],
+  [/sophos/i, 'Settings (admin) → Global exclusions → Add exclusion → File or folder.'],
+  [/trend micro/i, 'Settings → Exception Lists → Programs/folders → Add.'],
+]
+
+function avHint(name: string): string {
+  return AV_HINTS.find(([re]) => re.test(name))?.[1] ?? 'Open the antivirus app and look for Exclusions, Exceptions or Allow list in its settings.'
 }
 
 const DEV_DRIVE_DOCS = 'https://learn.microsoft.com/windows/dev-drive/'
@@ -30,7 +51,7 @@ export function PerformanceSettings() {
   const [error, setError] = useState<Diagnostic | null>(null)
 
   const take = (r: Awaited<ReturnType<typeof runCommand>>) => {
-    if (r.type === 'defender_status') setStatus({ state: r.state, excluded: r.excluded_by_ols, suggestions: r.suggestions, devDrive: r.dev_drive })
+    if (r.type === 'defender_status') setStatus({ state: r.state, excluded: r.excluded_by_ols, suggestions: r.suggestions, devDrive: r.dev_drive, otherAv: r.other_antivirus ?? [] })
   }
 
   const load = useCallback(async () => {
@@ -84,7 +105,7 @@ export function PerformanceSettings() {
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">Faster installs on Windows</CardTitle>
-        <CardDescription>Windows Defender scans every file that npm and Composer write. Excluding your project folders can make installs much faster.</CardDescription>
+        <CardDescription>Your antivirus scans every file that npm and Composer write. Excluding your project folders can make installs much faster.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
         <ErrorCard error={error} onDismiss={() => setError(null)} />
@@ -92,6 +113,8 @@ export function PerformanceSettings() {
           <p className="flex items-center gap-2 text-muted-foreground">
             <Spinner className="size-4" /> Asking Windows Defender…
           </p>
+        ) : status.otherAv.length > 0 && !(status.state.available && status.state.realtime_on) ? (
+          <OtherAntivirus names={status.otherAv} folders={status.suggestions} />
         ) : !status.state.available ? (
           <p className="text-muted-foreground">Defender is not active or is managed by your organization. Nothing to do here.</p>
         ) : (
@@ -149,5 +172,46 @@ export function PerformanceSettings() {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Another antivirus is doing the scanning (Bitdefender, Avast, ...). OLS cannot change its
+ * settings, so it lists the folders and where the exclusions usually are; the user adds them.
+ */
+function OtherAntivirus({ names, folders }: { names: string[]; folders: string[] }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p>
+        Your antivirus is <strong>{names.join(', ')}</strong>, not Windows Defender. OLS cannot change its settings, but you can add the folders below to its exclusions yourself.
+      </p>
+      <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
+        <p>
+          <strong>Security trade-off.</strong> Excluded folders are not scanned in real time, so malware downloaded into them (for example a malicious npm package) is not caught there. Only exclude folders with code you trust.
+        </p>
+      </div>
+      {names.map((n) => (
+        <p key={n} className="text-xs text-muted-foreground">
+          <strong className="text-foreground">{n}:</strong> usually {avHint(n)} Menus differ between versions.
+        </p>
+      ))}
+      <div className="flex flex-col divide-y rounded-md border">
+        {folders.length === 0 && <p className="p-3 text-muted-foreground">No folders to suggest yet.</p>}
+        {folders.map((p) => (
+          <div key={p} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+            <span className="min-w-0 break-all font-mono text-xs">{p}</span>
+            <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => void navigator.clipboard.writeText(p)}>
+              <Copy /> Copy
+            </Button>
+          </div>
+        ))}
+      </div>
+      {folders.length > 1 && (
+        <Button size="sm" variant="secondary" className="w-fit cursor-pointer" onClick={() => void navigator.clipboard.writeText(folders.join('\n'))}>
+          <Copy /> Copy all folders
+        </Button>
+      )}
+    </div>
   )
 }

@@ -802,6 +802,11 @@ pub enum CoreCommand {
     GetLanInfo {
         hostname: String,
     },
+    /// Phone link over plain HTTP (no certificate on the phone) instead of HTTPS.
+    SetSiteLanHttp {
+        hostname: String,
+        http: bool,
+    },
     StartCaShare,
     StopCaShare,
     /// §169: security and end-of-life checks.

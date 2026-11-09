@@ -187,6 +187,34 @@ impl WebServer for Apache {
             out.push_str(&body(&public));
             out.push_str("    RequestHeader set X-Forwarded-Proto \"https\"\n</VirtualHost>\n");
         }
+        // §178: this site alone on its own port, for a phone that asks by IP address. Site
+        // files are included at the top level, so the port can be opened here.
+        if let Some(lan) = site.lan {
+            out.push_str(&format!("\n# Open on my phone: port {}\n", lan.port));
+            out.push_str(&format!("Listen 0.0.0.0:{}\n", lan.port));
+            out.push_str(&format!("<VirtualHost 0.0.0.0:{}>\n", lan.port));
+            match (&site.tls, lan.https) {
+                (Some(tls), true) => {
+                    out.push_str(&head(site));
+                    out.push_str("    SSLEngine on\n");
+                    out.push_str(&format!(
+                        "    SSLCertificateFile \"{}\"\n",
+                        cfg_path(&tls.cert)
+                    ));
+                    out.push_str(&format!(
+                        "    SSLCertificateKeyFile \"{}\"\n",
+                        cfg_path(&tls.key)
+                    ));
+                    out.push_str(&body(site));
+                }
+                _ => {
+                    let plain = site.lan_plain();
+                    out.push_str(&head(&plain));
+                    out.push_str(&body(&plain));
+                }
+            }
+            out.push_str("</VirtualHost>\n");
+        }
         out
     }
 
@@ -403,6 +431,7 @@ mod tests {
             path_prefix: None,
             aliases: Vec::new(),
             missing_folder: false,
+            lan: None,
         }
     }
 
@@ -515,5 +544,42 @@ mod tests {
         assert!(cfg.contains("<Proxy balancer://ols_php_84>"));
         assert!(cfg.contains("BalancerMember fcgi://127.0.0.1:10840"));
         assert!(cfg.contains("BalancerMember fcgi://127.0.0.1:10841"));
+    }
+
+    #[test]
+    fn a_shared_site_gets_its_own_lan_port() {
+        let plain = Apache.render_site(&site(Backend::Static, true, true), PORTS);
+        let mut s = site(Backend::Static, true, true);
+        s.lan = Some(crate::web::LanListen {
+            port: 8700,
+            https: true,
+        });
+        let out = Apache.render_site(&s, PORTS);
+        assert!(
+            out.starts_with(&plain),
+            "the normal vhosts stay as they were"
+        );
+        let lan = &out[plain.len()..];
+        assert!(
+            lan.contains("Listen 0.0.0.0:8700\n<VirtualHost 0.0.0.0:8700>"),
+            "{lan}"
+        );
+        assert!(lan.contains("SSLEngine on"));
+        assert!(
+            !lan.contains("RewriteRule"),
+            "never redirected to the .test name"
+        );
+
+        s.lan = Some(crate::web::LanListen {
+            port: 8701,
+            https: false,
+        });
+        let out = Apache.render_site(&s, PORTS);
+        let lan = &out[plain.len()..];
+        assert!(lan.contains("<VirtualHost 0.0.0.0:8701>"), "{lan}");
+        assert!(
+            !lan.contains("SSLEngine") && !lan.contains("RewriteRule"),
+            "{lan}"
+        );
     }
 }

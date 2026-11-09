@@ -63,7 +63,7 @@ export type CoreResponse =
   | { type: 'db_backups'; backups: DbBackup[] }
   | { type: 'xdebug_profiles'; files: XdebugProfileFile[] }
   | { type: 'xdebug_profile'; profile: XdebugProfile }
-  | { type: 'defender_status'; state: DefenderState; excluded_by_ols: string[]; suggestions: string[]; dev_drive: DevDriveInfo[] }
+  | { type: 'defender_status'; state: DefenderState; excluded_by_ols: string[]; suggestions: string[]; dev_drive: DevDriveInfo[]; other_antivirus?: string[] }
   | { type: 'site_import_candidates'; candidates: SiteImportCandidate[] }
   | { type: 'php_upgrade_report'; report: PhpUpgradeReport | null }
   | { type: 'reclaim_report'; report: ReclaimReport | null }

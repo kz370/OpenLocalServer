@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, SquareTerminal, Trash2, UserRound, Wrench, X, Zap } from 'lucide-react'
+import { Activity, Check, CircleOff, Code2, Copy, Download, ExternalLink, EyeOff, FolderOpen, FolderPlus, FolderSearch, FolderX, Globe, HardDrive, KeyRound, List, ListX, MoreHorizontal, Play, Plus, RefreshCw, Search, Settings2, Smartphone, SquareTerminal, Trash2, UserRound, Wrench, X, Zap } from 'lucide-react'
 import { useEffect, useState, Fragment } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
@@ -10,6 +10,7 @@ import { newDomain } from '@/lib/newDomain'
 import { SiteExportDialog, SiteImportButton } from '@/components/site/SiteBundle'
 import { toolbarGroupClass, toolbarItemClass, toolbarLabelClass } from '@/components/site/toolbarStyles'
 import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
+import { focusPhoneSection } from '@/lib/phoneFocus'
 import { SiteLogoDialog, type SiteLogoTarget } from '@/components/site/SiteLogoDialog'
 import { SiteLogo } from '@/components/SiteLogo'
 import { DriftDialog } from '@/components/site/WebApply'
@@ -824,6 +825,33 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         },
       })
       if (d.has_app) items.push({ label: 'Restart app process', icon: <RefreshCw />, onSelect: () => void run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname })) })
+      // §178: the same switch as site settings → Open on my phone. Turning it on opens the
+      // Domains tab, where the QR code and the certificate helper are.
+      items.push(
+        d.lan
+          ? {
+              label: 'Stop sharing on my network',
+              icon: <Smartphone />,
+              hint: 'Your phone can no longer open this site',
+              onSelect: () =>
+                void run(`lan:${d.hostname}`, async () => {
+                  await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: false })
+                  await refresh()
+                }),
+            }
+          : {
+              label: 'Share this site on my network',
+              icon: <Smartphone />,
+              hint: 'Open it on a phone on the same Wi-Fi (QR code)',
+              onSelect: () =>
+                void run(`lan:${d.hostname}`, async () => {
+                  await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: true })
+                  await refresh()
+                  focusPhoneSection(d.hostname)
+                  setTarget({ hostname: d.hostname, projectId: p?.id ?? null, tab: 'domains' })
+                }),
+            },
+      )
       items.push({
         label: 'Export to bundle…',
         icon: <Download />,

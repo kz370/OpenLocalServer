@@ -744,6 +744,7 @@ impl WebManager {
                 .then(|| layout.custom_file(server.config_ext(), &d.hostname));
             let is_proxy = matches!(backend, Backend::Proxy { .. });
             let missing_folder = !is_proxy && !std::path::Path::new(&d.root).is_dir();
+            let lan_https = tls.is_some() && !d.lan_http;
             let spec = SiteSpec {
                 hostname: d.hostname.clone(),
                 wildcard: d.wildcard,
@@ -756,15 +757,17 @@ impl WebManager {
                 public_domain: d.public_domain.clone(),
                 forwarded_tls: false,
                 path_prefix: d.path_prefix.clone(),
-                aliases: {
-                    let mut names = d.aliases.clone();
-                    // §178: the LAN name is one more server name; absent when sharing is off.
-                    if let (true, Some(lan)) = (d.lan, d.lan_alias.as_ref()) {
-                        names.push(lan.clone());
-                    }
-                    names
-                },
+                aliases: d.aliases.clone(),
                 missing_folder,
+                // §178: the site's own LAN port, HTTPS when it has a certificate and the
+                // user did not pick plain HTTP for the phone.
+                lan: match (d.lan, d.lan_port) {
+                    (true, Some(port)) => Some(crate::web::LanListen {
+                        port,
+                        https: lan_https,
+                    }),
+                    _ => None,
+                },
             };
             path_specs.push(spec.clone());
             rendered.push((d.clone(), server.render_site(&spec, ports)));

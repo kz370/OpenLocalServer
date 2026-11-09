@@ -1,4 +1,4 @@
-import { CheckCircle2, Clipboard, Pause, Play, RefreshCw } from 'lucide-react'
+import { CheckCircle2, Clipboard, Pause, Play, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
@@ -7,6 +7,8 @@ import { Select, Tabs, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { type CommandSource, type LogSource, runCommand } from '@/core'
 import { sourceCache } from '@/lib/commandHelpers'
+import { confirmAction } from '@/lib/confirm'
+import { notify } from '@/lib/notify'
 import { SourceProblem } from '@/pages/Commands'
 import { SEVERITY_COLOR, severityOf } from '@/lib/logSeverity'
 
@@ -144,6 +146,24 @@ function LogViewer({ hostname, projectName }: { hostname: string | null; project
     box.current?.scrollTo({ top: box.current.scrollHeight })
   }, [shown.length])
 
+  // Web server logs are one file for every site the server renders, so clearing one here
+  // clears it for all of them; the confirmation says so. A process log is this site's own.
+  async function clearLog() {
+    const picked = all.find((s) => s.id === source)
+    const name = picked?.name ?? source
+    const shared = picked?.kind === 'web' || source.startsWith('web:')
+    const message = shared
+      ? `Clear ${name}? This log is shared by every site on this web server, so all sites' lines are deleted, not only ${hostname ?? 'this site'}'s. This cannot be undone; use Export on the Logs page first if you need them.`
+      : `Clear ${name}? Its lines are deleted for good.`
+    if (!(await confirmAction(message, 'Clear log', 'Clear'))) return
+    try {
+      await runCommand({ type: 'clear_log', source })
+      setLines([])
+    } catch (e) {
+      notify.error(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -163,6 +183,9 @@ function LogViewer({ hostname, projectName }: { hostname: string | null; project
           </Button>
           <Button size="sm" variant="ghost" className="h-8 w-8 px-0" title="Copy visible lines" onClick={() => navigator.clipboard.writeText(shown.map((l) => l.text).join('\n'))}>
             <Clipboard className="size-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8 w-8 px-0" title="Clear this log" aria-label="Clear this log" disabled={!source} onClick={() => void clearLog()}>
+            <Trash2 className="size-3.5" />
           </Button>
         </div>
       </div>
