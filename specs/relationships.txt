@@ -429,7 +429,6 @@ Runtimes page | reads | get_eol_report (badges)
 dispatch::SetSiteLan | calls | Inner::set_site_lan -> lan::pick_port + DomainStore::update + apply_web (SiteSpec.lan rendered as an extra listener; LAN IP in certs::names_for while shared over HTTPS)
 dispatch::SetSiteLanHttp | calls | Inner::set_site_lan_http -> DomainStore::update + apply_web
 SiteLogs | calls | clear_log (core Inner::clear_log)
-Sites menuFor | calls | set_site_lan + lib/phoneFocus::focusPhoneSection -> SiteDialog domains tab -> PhoneSection
 Inner::defender_status | calls | defender::query_other_antivirus (PowerShell, Windows Security Center)
 scheduler::start_clock | ticks | lan::tick (only when a site has lan on)
 dispatch::StartCaShare | calls | Inner::start_ca_share -> lan_share::start (thread ols-ca-share)
@@ -439,4 +438,4 @@ Core::dispatch | releases | IdleState::release before Start/Stop/Restart/StopAll
 Inner::sync_mdns | calls | mdns::Responder::{start, set_names} (names = shared sites' Domain.lan_local; restarted on a new LAN address; dropped when nothing is shared)
 lan::tick | calls | Inner::sync_mdns
 web::manager apply | reads | Domain.lan_local (server name) ; certs::names_for reads Domain.lan_local
-Sites row phone button | calls | confirmAction -> set_site_lan (+ focusPhoneSection on share)
+Sites row phone button | opens | PhoneShareDialog -> PhoneSection -> confirmAction -> set_site_lan

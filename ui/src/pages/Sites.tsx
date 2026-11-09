@@ -10,7 +10,7 @@ import { newDomain } from '@/lib/newDomain'
 import { SiteExportDialog, SiteImportButton } from '@/components/site/SiteBundle'
 import { toolbarGroupClass, toolbarItemClass, toolbarLabelClass } from '@/components/site/toolbarStyles'
 import { SiteDialog, type SiteTarget } from '@/components/site/SiteDialog'
-import { focusPhoneSection } from '@/lib/phoneFocus'
+import { PhoneShareDialog } from '@/components/site/PhoneCertDialog'
 import { SiteLogoDialog, type SiteLogoTarget } from '@/components/site/SiteLogoDialog'
 import { SiteLogo } from '@/components/SiteLogo'
 import { DriftDialog } from '@/components/site/WebApply'
@@ -159,6 +159,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const serverIsRunning = busy === 'stop' || (busy !== 'apply' && !!status?.running)
 
   const [target, setTarget] = useState<SiteTarget | null>(null)
+  const [shareFor, setShareFor] = useState<string | null>(null)
   const [logoTarget, setLogoTarget] = useState<SiteLogoTarget | null>(null)
   const [adding, setAdding] = useState<Domain | null>(null)
   const [wizardId, setWizardId] = useState<string | null>(null)
@@ -727,49 +728,11 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     })
   }
 
-  // §178: share a site with phones on the same Wi-Fi, or stop. Sharing opens the site's
-  // domains tab scrolled to the Open on my phone section, where the QR code is.
-  function shareOnNetwork(d: DomainSummary, projectId: string | null) {
-    void run(`lan:${d.hostname}`, async () => {
-      await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: true })
-      await refresh()
-      focusPhoneSection(d.hostname)
-      setTarget({ hostname: d.hostname, projectId, tab: 'domains' })
-    })
-  }
-  function stopSharingOnNetwork(d: DomainSummary) {
-    void run(`lan:${d.hostname}`, async () => {
-      await runCommand({ type: 'set_site_lan', hostname: d.hostname, on: false })
-      await refresh()
-      notify.success(`${d.hostname} is no longer shared on your network.`)
-    })
-  }
-  // The row's phone button asks first: sharing opens the site to every device on the Wi-Fi.
-  // Why a site cannot be shared right now, or null. Stopping is always allowed.
+  // §178: the dedicated sharing window (QR codes, HTTPS, certificate). Turning sharing on or
+  // off, with its confirmation, happens inside it. A site that is off, or whose web server is
+  // stopped, cannot be shared; a shared one can always be opened to stop it.
   const shareBlocked = (d: DomainSummary): string | null =>
     d.lan ? null : !d.enabled ? 'Turn the site on first: a disabled site is not served.' : !status?.running ? 'Start the web server first.' : null
-  async function togglePhoneShare(d: DomainSummary, projectId: string | null) {
-    const blocked = shareBlocked(d)
-    if (blocked) {
-      notify.warning(blocked)
-      return
-    }
-    const ok = d.lan
-      ? await confirmAction(`Stop sharing ${d.hostname} on your network? Phones on your Wi-Fi can no longer open it.`, 'Stop sharing', 'Stop sharing')
-      : await confirmAction(
-          `Share ${d.hostname} on your network? Any device on the same Wi-Fi can open it while sharing is on. OLS shows a QR code for your phone next.`,
-          'Share on my network',
-          'Share',
-          'amber',
-        )
-    if (!ok) return
-    if (d.lan) stopSharingOnNetwork(d)
-    else shareOnNetwork(d, projectId)
-  }
-  function showPhoneSection(d: DomainSummary, projectId: string | null) {
-    focusPhoneSection(d.hostname)
-    setTarget({ hostname: d.hostname, projectId, tab: 'domains' })
-  }
 
   function menuFor(r: Row): MenuItem[] {
     const { site: d, project: p } = r
@@ -874,13 +837,14 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
         },
       })
       if (d.has_app) items.push({ label: 'Restart app process', icon: <RefreshCw />, onSelect: () => void run('restart', () => runCommand({ type: 'restart_site_app', hostname: d.hostname })) })
-      // §178: the same switch as site settings → Open on my phone. Turning it on opens the
-      // Domains tab, where the QR code and the certificate helper are.
-      items.push(
-        d.lan
-          ? { label: 'Stop sharing on my network', icon: <PhoneShareIcon />, hint: 'Your phone can no longer open this site', onSelect: () => stopSharingOnNetwork(d) }
-          : { label: 'Share this site on my network', icon: <PhoneShareIcon />, hint: shareBlocked(d) ?? 'Open it on a phone on the same Wi-Fi (QR code)', disabled: !!shareBlocked(d), onSelect: () => shareOnNetwork(d, p?.id ?? null) },
-      )
+      // §178: opens the sharing window.
+      items.push({
+        label: d.lan ? 'Sharing on my network…' : 'Share this site on my network…',
+        icon: <PhoneShareIcon />,
+        hint: shareBlocked(d) ?? (d.lan ? 'QR codes, or stop sharing' : 'Open it on a phone on the same Wi-Fi (QR code)'),
+        disabled: !!shareBlocked(d),
+        onSelect: () => setShareFor(d.hostname),
+      })
       items.push({
         label: 'Export to bundle…',
         icon: <Download />,
@@ -1056,7 +1020,17 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
       header={
       <div className="mb-1">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
+            <button
+              type="button"
+              className={`flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs ${sharedCount > 0 ? 'border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10' : 'border-border text-muted-foreground hover:bg-accent'}`}
+              title={sharedCount > 0 ? 'Sites phones on your Wi-Fi can open. Click to list them.' : 'No site is shared on your network'}
+              onClick={() => setFilter('shared')}
+            >
+              <PhoneShareIcon className="size-3.5" /> {sharedCount} shared on network
+            </button>
+          </div>
           <div className="flex h-8 w-[232px] shrink-0 items-stretch rounded-md border border-border bg-transparent">
             <div className="flex min-w-0 flex-1 items-center gap-2 px-2.5 text-xs">
               {busy === 'apply' || busy === 'stop' ? (
@@ -1562,7 +1536,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                           type="button"
                           className="mt-0.5 flex cursor-pointer items-center gap-1 text-[11px] font-medium text-emerald-500 hover:underline"
                           title="Shared on your network. Open the QR code and settings."
-                          onClick={() => showPhoneSection(d, p?.id ?? null)}
+                          onClick={() => setShareFor(d.hostname)}
                         >
                           <PhoneShareIcon className="size-3" /> On your network
                         </button>
@@ -1611,13 +1585,13 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
                             size="sm"
                             variant="ghost"
                             className={`h-8 w-8 px-0 ${d.lan ? 'cursor-pointer text-emerald-500 hover:text-emerald-600' : 'cursor-pointer text-muted-foreground/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40'}`}
-                            disabled={busy === `lan:${d.hostname}` || !!shareBlocked(d)}
-                            onClick={() => void togglePhoneShare(d, p?.id ?? null)}
-                            title={d.lan ? 'Shared on your network: click to stop sharing' : (shareBlocked(d) ?? 'Share on my network (open it on a phone)')}
-                            aria-label={d.lan ? `Stop sharing ${d.hostname} on your network` : `Share ${d.hostname} on your network`}
+                            disabled={!!shareBlocked(d)}
+                            onClick={() => setShareFor(d.hostname)}
+                            title={d.lan ? 'Shared on your network: open the sharing window' : (shareBlocked(d) ?? 'Share on my network (open it on a phone)')}
+                            aria-label={d.lan ? `Sharing window for ${d.hostname}` : `Share ${d.hostname} on your network`}
                             aria-pressed={d.lan ?? false}
                           >
-                            {busy === `lan:${d.hostname}` ? <Spinner /> : <PhoneShareIcon className="size-3.5" />}
+                            <PhoneShareIcon className="size-3.5" />
                           </Button>
                         )}
                         <Button size="sm" variant="ghost" className="h-8 w-8 cursor-pointer px-0" onClick={openSettings} title="Settings" aria-label={`Settings for ${d?.hostname ?? p?.name}`}>
@@ -1714,6 +1688,7 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           })()}
       </ScrollableList>
 
+      <PhoneShareDialog hostname={shareFor} onClose={() => setShareFor(null)} onChanged={() => void refresh()} />
       {shownTarget && <SiteDialog key={`${shownTarget.hostname}:${shownTarget.projectId}`} target={shownTarget} web={web} onClose={() => setTarget(null)} onSaved={(hostname) => setTarget((t) => (t ? { ...t, hostname, tab: 'settings' } : t))} />}
 
       <DomainDialog

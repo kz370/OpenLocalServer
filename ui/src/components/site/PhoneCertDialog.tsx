@@ -1,7 +1,7 @@
 import { Copy } from 'lucide-react'
 
 import { PhoneShareIcon } from '@/components/PhoneShareIcon'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
@@ -10,11 +10,11 @@ import { Dialog } from '@/components/ui/dialog'
 import { FormSection, SwitchRow } from '@/components/ui/form'
 import { type Diagnostic, type LanInfo, runCommand } from '@/core'
 import { asDiagnostic } from '@/lib/diagnostic'
-import { clearPhoneFocus, wantsPhoneFocus } from '@/lib/phoneFocus'
+import { confirmAction } from '@/lib/confirm'
 
 /** An SVG string from the core as an image. Never injected as HTML. */
-function Qr({ svg, label }: { svg: string; label: string }) {
-  return <img alt={label} className="size-44 rounded-md bg-white p-1" src={`data:image/svg+xml;base64,${btoa(svg)}`} />
+function Qr({ svg, label, small }: { svg: string; label: string; small?: boolean }) {
+  return <img alt={label} className={`${small ? 'size-28' : 'size-44'} shrink-0 rounded-md bg-white p-1`} src={`data:image/svg+xml;base64,${btoa(svg)}`} />
 }
 
 function useCountdown(ms: number | null) {
@@ -97,38 +97,31 @@ export function PhoneCertDialog({ open, onClose }: { open: boolean; onClose: () 
 /** One phone link: a QR code, the address and a copy button. */
 function LinkCard({ title, hint, url, qr }: { title: string; hint: string; url: string; qr: string | null }) {
   return (
-    <div className="flex min-w-0 flex-1 basis-64 flex-col items-start gap-2 rounded-md border border-border p-3">
-      <p className="text-xs font-medium">{title}</p>
-      {qr && <Qr svg={qr} label={`QR code for ${url}`} />}
-      <p className="break-all font-mono text-xs">{url}</p>
-      <p className="text-xs text-muted-foreground">{hint}</p>
-      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => void navigator.clipboard.writeText(url)}>
-        <Copy className="size-3.5" /> Copy address
-      </Button>
+    <div className="flex min-w-0 flex-1 basis-72 items-center gap-3 rounded-md border border-border p-2.5">
+      {qr && <Qr svg={qr} label={`QR code for ${url}`} small />}
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium">{title}</p>
+        <p className="mt-0.5 break-all font-mono text-[11px]">{url}</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
+        <Button size="sm" variant="ghost" className="-ml-2 mt-0.5 h-6 px-2 text-xs" onClick={() => void navigator.clipboard.writeText(url)}>
+          <Copy className="size-3" /> Copy
+        </Button>
+      </div>
     </div>
   )
 }
 
+/** The phone section's frame: a titled form section in site settings, bare inside the sharing window. */
+function PhoneWrap({ bare, children }: { bare?: boolean; children: React.ReactNode }) {
+  return bare ? <div>{children}</div> : <FormSection title="Open on my phone" hint="Reach this site from a phone on the same Wi-Fi. No internet needed.">{children}</FormSection>
+}
+
 /** Site settings section: a LAN address and QR for the site, and the certificate helper. */
-export function PhoneSection({ hostname }: { hostname: string }) {
+export function PhoneSection({ hostname, onChanged, bare }: { hostname: string; onChanged?: () => void; bare?: boolean }) {
   const [info, setInfo] = useState<LanInfo | null>(null)
   const [busy, setBusy] = useState(false)
   const [certOpen, setCertOpen] = useState(false)
   const [error, setError] = useState<Diagnostic | null>(null)
-  const anchor = useRef<HTMLDivElement>(null)
-
-  // Scroll as soon as the section is on screen, and once more when the QR codes have loaded
-  // (they change the height of everything above the fold). The request is only cleared after
-  // that second scroll, so React's double-run of effects in development cannot lose it.
-  useEffect(() => {
-    if (!wantsPhoneFocus(hostname)) return
-    const scroll = () => anchor.current?.scrollIntoView({ behavior: info ? 'smooth' : 'auto', block: 'start' })
-    const id = window.setTimeout(() => {
-      scroll()
-      if (info) clearPhoneFocus(hostname)
-    }, info ? 50 : 0)
-    return () => window.clearTimeout(id)
-  }, [hostname, info])
 
   const load = useCallback(async () => {
     try {
@@ -143,11 +136,17 @@ export function PhoneSection({ hostname }: { hostname: string }) {
   }, [load])
 
   async function toggle(on: boolean) {
+    // Sharing opens the site to every device on the Wi-Fi, so both directions ask first.
+    const ok = on
+      ? await confirmAction(`Share ${hostname} on your network? Any device on the same Wi-Fi can open it while sharing is on.`, 'Share on my network', 'Share', 'amber')
+      : await confirmAction(`Stop sharing ${hostname}? Phones on your Wi-Fi can no longer open it.`, 'Stop sharing', 'Stop sharing')
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {
       const r = await runCommand({ type: 'set_site_lan', hostname, on })
       if (r.type === 'lan_info') setInfo(r.info)
+      onChanged?.()
     } catch (e) {
       setError(asDiagnostic(e))
     } finally {
@@ -170,11 +169,10 @@ export function PhoneSection({ hostname }: { hostname: string }) {
 
   return (
     <>
-    <div ref={anchor} className="scroll-mt-4" />
-    <FormSection title="Open on my phone" hint="Reach this site from a phone on the same Wi-Fi. No internet needed.">
+    <PhoneWrap bare={bare}>
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
-      <div className="flex flex-col gap-3">
-        <SwitchRow checked={info?.on ?? false} disabled={busy || !info} onChange={(v) => void toggle(v)} title="Share this site on my network" hint="Gives the site its own port on this computer's network address. Scan the QR code on the phone." />
+      <div className="flex flex-col gap-2.5">
+        <SwitchRow checked={info?.on ?? false} disabled={busy || !info} onChange={(v) => void toggle(v)} title="Share this site on my network" hint="Phones on the same Wi-Fi can open it. No internet needed." />
         {info?.on && (
           <SwitchRow
             checked={info.https ?? false}
@@ -183,32 +181,32 @@ export function PhoneSection({ hostname }: { hostname: string }) {
             title="Use HTTPS"
             hint={
               info.can_https
-                ? 'On: the phone installs the OLS certificate once and gets a secure page (camera, location and secure cookies work). Off: plain HTTP, nothing to install, but the browser marks the page not secure.'
-                : 'This site has no HTTPS, so the phone link is plain HTTP. Turn on HTTPS for the site to use it here.'
+                ? 'On: install the OLS certificate on the phone once. Off: plain HTTP, nothing to install.'
+                : 'This site has no HTTPS, so the phone link is plain HTTP.'
             }
           />
         )}
         {info?.on && info.url && (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap gap-4">
+          <div className="flex flex-col gap-2.5">
+            <div className="flex flex-wrap gap-3">
               {info.local_url && (
                 <LinkCard
                   title={`By name: ${info.local_name}`}
-                  hint="iPhone, iPad, Mac, Windows and newer Android phones."
+                  hint="iPhone, Mac, Windows, newer Android."
                   url={info.local_url}
                   qr={info.local_qr_svg ?? null}
                 />
               )}
               <LinkCard
                 title={info.local_url ? 'By address (if the name does not open)' : 'By address'}
-                hint="Works on every phone on the same Wi-Fi."
+                hint="Works on every phone."
                 url={info.url}
                 qr={info.qr_svg}
               />
             </div>
             {!info.local_url && (
               <p className="rounded-md border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
-                Phones can open a site by name only when its domain ends in <code>.local</code> (for example <code>shop.local</code>). This site's domain is <code>{hostname}</code>, so the phone opens it with this computer's address and the site's own port above.
+                Phones open a site by name only for <code>.local</code> domains (like <code>shop.local</code>). <code>{hostname}</code> is opened by address and port.
               </p>
             )}
             {info.https && (
@@ -224,13 +222,26 @@ export function PhoneSection({ hostname }: { hostname: string }) {
           </p>
         ))}
         {info?.on && (
-          <p className="text-xs text-muted-foreground">
-            The phone and this computer must be on the same Wi-Fi. If Windows asks, allow the web server on private networks. Apps that send you to their own address (for example WordPress Site URL or a Laravel APP_URL redirect) will jump to the .test name, which the phone cannot open.
+          <p className="text-[11px] text-muted-foreground">
+            Same Wi-Fi as this computer. Apps that redirect to their own domain (WordPress Site URL, Laravel APP_URL) will leave the phone link.
           </p>
         )}
       </div>
-    </FormSection>
+    </PhoneWrap>
     <PhoneCertDialog open={certOpen} onClose={() => setCertOpen(false)} />
     </>
+  )
+}
+
+/**
+ * The dedicated sharing window: one site's phone links, QR codes, HTTPS switch and certificate
+ * helper. Opened from the Sites page (row button, menu, status link); the same controls also
+ * live in the site's settings, Domains tab.
+ */
+export function PhoneShareDialog({ hostname, onClose, onChanged }: { hostname: string | null; onClose: () => void; onChanged?: () => void }) {
+  return (
+    <Dialog open={hostname !== null} onClose={onClose} title="Share on my network" description={hostname ?? undefined} size="default">
+      {hostname && <PhoneSection key={hostname} hostname={hostname} onChanged={onChanged} bare />}
+    </Dialog>
   )
 }
