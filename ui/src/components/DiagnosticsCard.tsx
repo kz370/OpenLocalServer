@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, RefreshCw, Wrench, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, RefreshCw, Wrench, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Spinner } from '@/components/Spinner'
@@ -54,6 +54,7 @@ export function DiagnosticsCard({
   const [scanError, setScanError] = useState<Diagnostic | null>(null)
   const [lastChecked, setLastChecked] = useState<number | null>(null)
   const [now, setNow] = useState<number>(() => Date.now())
+  const [expanded, setExpanded] = useState(false)
   const { busy, run } = useAction()
   const startingServices = useStartingServices()
 
@@ -290,13 +291,20 @@ export function DiagnosticsCard({
   return (
     <div
       className={cn(
-        'h-10 min-h-[40px] max-h-[44px] flex items-center justify-between gap-3 rounded-lg border px-3.5 shadow-xs transition-colors w-full min-w-0',
+        'rounded-lg border shadow-xs transition-colors w-full min-w-0',
         hasErrors
           ? 'border-destructive/40 bg-destructive/10 text-destructive-foreground'
           : 'border-warning/40 bg-warning/10 text-foreground'
       )}
     >
-      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+    <div className="h-10 min-h-[40px] max-h-[44px] flex items-center justify-between gap-3 px-3.5 w-full min-w-0">
+      <button
+        type="button"
+        className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer text-left"
+        aria-expanded={expanded}
+        title={expanded ? 'Hide the details' : 'Show what the problems are'}
+        onClick={() => setExpanded((v) => !v)}
+      >
         {hasErrors ? (
           <XCircle className="size-4 shrink-0 text-destructive" />
         ) : (
@@ -318,7 +326,8 @@ export function DiagnosticsCard({
           {active.map((f) => f.problem).slice(0, 2).join(' · ')}
           {active.length > 2 ? ` (+${active.length - 2} more)` : ''}
         </span>
-      </div>
+        <ChevronDown className={cn('size-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-180')} />
+      </button>
 
       <div className="flex items-center gap-1.5 shrink-0">
         {hasSiteMissing && onNavigate && (
@@ -372,6 +381,24 @@ export function DiagnosticsCard({
           {busy === 'scan' ? <Spinner className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
         </Button>
       </div>
+    </div>
+    {expanded && (
+      <ul className="flex flex-col divide-y divide-border/50 border-t border-border/50 px-3.5 text-xs">
+        {active.map((f) => (
+          <li key={f.id} className="flex flex-col gap-0.5 py-2">
+            <span className="flex items-center gap-2 font-medium text-foreground">
+              {f.severity === 'error' ? <XCircle className="size-3.5 shrink-0 text-destructive" /> : <AlertTriangle className="size-3.5 shrink-0 text-warning" />}
+              {f.problem}
+            </span>
+            {f.cause && <span className="pl-5.5 text-muted-foreground">Why: {f.cause}</span>}
+            {f.fix && <span className="pl-5.5 text-muted-foreground">Fix: {f.fix}</span>}
+            {f.details.length > 0 && (
+              <span className="pl-5.5 font-mono text-[11px] text-muted-foreground break-all">{f.details.join(' · ')}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    )}
     </div>
   )
 }

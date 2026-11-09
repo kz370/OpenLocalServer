@@ -22,7 +22,7 @@ about the following are especially welcome:
 
 ## Windows Defender exclusions (2.12.0)
 
-Settings → Performance can ask the elevated helper to exclude folders from Windows Defender's real-time scan, which
+Settings → General can ask the elevated helper to exclude folders from Windows Defender's real-time scan, which
 makes `npm install` and `composer install` faster. The helper has two commands for this, `defender-exclude-add` and
 `defender-exclude-remove`, each taking exactly one folder. The helper refuses anything that is not an existing folder on
 a local drive, anything with characters that could change the PowerShell command, `.`/`..` parts, drive roots, system

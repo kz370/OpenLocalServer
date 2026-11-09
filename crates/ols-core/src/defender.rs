@@ -127,7 +127,7 @@ pub fn check_add(path: &str, suggestions: &[String]) -> Result<String, CoreError
             CoreError::failed_fix(
                 "OLS will not exclude that folder.",
                 format!("\"{path}\" is not one of the folders OLS manages (project folders, the sites folder and its data folder)."),
-                "Pick a folder from the list in Settings → Performance.",
+                "Pick a folder from the list in Settings → General.",
             )
         })
 }

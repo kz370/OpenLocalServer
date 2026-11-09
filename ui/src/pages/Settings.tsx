@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Book, Check, Gauge, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
+import { Book, Check, Copy, ExternalLink, Eye, EyeOff, FolderPlus, FolderSearch, RefreshCw, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { PageLayout } from '@/components/PageLayout'
@@ -51,7 +51,7 @@ import {
 import { AppearanceSettings } from '@/components/settings/AppearanceSettings'
 import { SidebarItemsSettings } from '@/components/settings/SidebarItemsSettings'
 
-type Section = 'general' | 'editors' | 'appearance' | 'sidebar' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'performance' | 'backups' | 'about' | 'mcp'
+type Section = 'general' | 'editors' | 'appearance' | 'sidebar' | 'sites' | 'roots' | 'deleted' | 'startup' | 'manual' | 'resources' | 'backups' | 'about' | 'mcp'
 type SettingsDraft =
   | { section: 'general'; confirmExit: boolean; confirmStopAll: boolean; autoFixDiagnostics: boolean }
   | { section: 'sites'; projectsDir: string; autoDomains: boolean; watchSites: boolean; defaultTld: string; customTld: string }
@@ -69,7 +69,6 @@ const SECTIONS: { id: Section; label: string; icon: React.ComponentType<{ classN
   { id: 'startup', label: 'Startup & tray', icon: SettingsStartupIcon },
   { id: 'manual', label: 'User Manual', icon: SettingsManualIcon },
   { id: 'resources', label: 'Resources', icon: SettingsResourcesIcon },
-  { id: 'performance', label: 'Performance', icon: Gauge },
   { id: 'backups', label: 'Backups', icon: SettingsBackupsIcon },
   { id: 'about', label: 'About', icon: SettingsAboutIcon },
 ]
@@ -905,6 +904,7 @@ export function SettingsPage() {
                   <DumpViewerSettings />
                 </CardContent>
               </Card>
+              <PerformanceSettings />
               <ApiCard />
               <SystemCard />
             </>
@@ -1139,7 +1139,6 @@ export function SettingsPage() {
             </Card>
           )}
           {section === 'resources' && <ResourcesCard />}
-          {section === 'performance' && <PerformanceSettings />}
           {section === 'backups' && (
             <>
               <AutoBackupCard />

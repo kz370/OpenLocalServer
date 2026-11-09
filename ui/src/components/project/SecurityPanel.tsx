@@ -2,6 +2,7 @@ import { Eye, EyeOff, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { TaskOutputDialog } from '@/components/docker/TaskOutputDialog'
+import { SecurityDetailsDialog } from '@/components/SecurityDetailsDialog'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { Badge } from '@/components/ui/badge'
@@ -173,18 +174,37 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
   const [eol, setEol] = useState<EolItem[]>([])
   const [taskId, setTaskId] = useState<string | null>(null)
   const [error, setError] = useState<Diagnostic | null>(null)
+  const [showDetails, setShowDetails] = useState(false)
+  const [projectNames, setProjectNames] = useState<Record<string, string>>({})
   const { ignored, setHidden, showAll } = useIgnoredSecurity()
 
   const load = useCallback(async () => {
     try {
+      let fresh: AuditResult[] = []
       const a = await runCommand({ type: 'list_audit_results' })
-      if (a.type === 'audit_results') setResults(a.results)
+      if (a.type === 'audit_results') {
+        setResults(a.results)
+        fresh = a.results
+      }
+      const p = await runCommand({ type: 'list_projects' })
+      if (p.type === 'projects') setProjectNames(Object.fromEntries(p.projects.map((x) => [x.id, x.name])))
       const e = await runCommand({ type: 'get_eol_report' })
       if (e.type === 'eol_report') setEol(e.items)
+      return fresh
     } catch (err) {
       setError(asDiagnostic(err))
+      return []
     }
   }, [])
+
+  // When a check finishes, show what it found instead of leaving only "N finding(s)".
+  const checkFinished = useCallback(async () => {
+    const fresh = await load()
+    if (fresh.some((r) => r.tools.some((t) => t.findings.length > 0))) {
+      setTaskId(null)
+      setShowDetails(true)
+    }
+  }, [load])
   useEffect(() => {
     void load()
   }, [load])
@@ -216,6 +236,24 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
       Check all projects
     </Button>
   )
+  const anyFindings = results.some((r) => r.tools.some((t) => t.findings.length > 0))
+  const detailsButton = (anyFindings || allEnded.length > 0) && (
+    <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => setShowDetails(true)}>
+      View details
+    </Button>
+  )
+  const detailsDialog = (
+    <SecurityDetailsDialog
+      open={showDetails}
+      onClose={() => setShowDetails(false)}
+      results={results}
+      eol={eol}
+      projectNames={projectNames}
+      ignored={ignored}
+      setHidden={setHidden}
+      onError={(e) => setError(asDiagnostic(e))}
+    />
+  )
   const hiddenButton = hidden > 0 && (
     <Button size="sm" variant="ghost" className="cursor-pointer" title="Show the hidden security items again" onClick={showAll}>
       <Eye /> {hidden} hidden
@@ -232,9 +270,11 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
         </span>
         <span className="flex gap-2">
           {hiddenButton}
+          {detailsButton}
           {checkAll}
         </span>
-        <TaskOutputDialog taskId={taskId} onClose={() => setTaskId(null)} onFinished={() => void load()} />
+        {detailsDialog}
+        <TaskOutputDialog taskId={taskId} onClose={() => setTaskId(null)} onFinished={() => void checkFinished()} />
       </div>
     )
   }
@@ -252,8 +292,12 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
         <span className="flex flex-wrap items-center gap-2">
           {results.length > 0 && (
             <>
-              <Badge variant={critical > 0 ? 'destructive' : 'secondary'}>{critical} critical</Badge>
-              <Badge variant={high > 0 ? 'destructive' : 'secondary'}>{high} high</Badge>
+              <button type="button" className="cursor-pointer" title="See the details" onClick={() => setShowDetails(true)}>
+                <Badge variant={critical > 0 ? 'destructive' : 'secondary'}>{critical} critical</Badge>
+              </button>
+              <button type="button" className="cursor-pointer" title="See the details" onClick={() => setShowDetails(true)}>
+                <Badge variant={high > 0 ? 'destructive' : 'secondary'}>{high} high</Badge>
+              </button>
             </>
           )}
           {ended.map((i) => (
@@ -273,6 +317,7 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
         </span>
         <span className="flex gap-2">
           {hiddenButton}
+          {detailsButton}
           {onOpenProjects && (
             <Button size="sm" variant="ghost" onClick={onOpenProjects}>
               Open projects
@@ -281,7 +326,8 @@ export function SecuritySummaryCard({ onOpenProjects }: { onOpenProjects?: () =>
           {checkAll}
         </span>
       </CardContent>
-      <TaskOutputDialog taskId={taskId} onClose={() => setTaskId(null)} onFinished={() => void load()} />
+      {detailsDialog}
+      <TaskOutputDialog taskId={taskId} onClose={() => setTaskId(null)} onFinished={() => void checkFinished()} />
     </Card>
   )
 }

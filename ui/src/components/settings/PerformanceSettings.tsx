@@ -21,7 +21,7 @@ interface Status {
 const DEV_DRIVE_DOCS = 'https://learn.microsoft.com/windows/dev-drive/'
 
 /**
- * §173 Settings → Performance: optional Windows Defender exclusions for the folders OLS
+ * §173 Settings → General: optional Windows Defender exclusions for the folders OLS
  * manages, and a Dev Drive hint. Nothing is excluded without a click and a confirmation, and
  * OLS only lists and removes what it added itself.
  */

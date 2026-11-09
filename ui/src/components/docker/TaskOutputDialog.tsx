@@ -1,6 +1,7 @@
 import { listen } from '@tauri-apps/api/event'
 import { CheckCircle2, CircleX, Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
@@ -67,7 +68,9 @@ export function TaskOutputDialog({
   }, [task?.results.length])
 
   const running = !task || task.state === 'running'
-  return (
+  // Rendered on <body>: the Dashboard page is a CSS container, which traps `position: fixed`
+  // children, so the dialog opened inside the page flow instead of over it.
+  return createPortal(
     <Dialog
       open={!!taskId}
       onClose={onClose}
@@ -123,6 +126,7 @@ export function TaskOutputDialog({
           {task.error.fix && <p className="mt-1">{task.error.fix}</p>}
         </div>
       )}
-    </Dialog>
+    </Dialog>,
+    document.body,
   )
 }

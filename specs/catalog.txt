@@ -314,7 +314,7 @@ migrate_sites (crates/ols-core/src/migrate_sites.rs) | §172 site import: `SiteI
 SiteImportPanel (ui/src/components/SiteImportPanel.tsx) | Sites tab in MigrateDialog.
 defender (crates/ols-core/src/defender.rs) | §173 Defender exclusions: `DefenderState`, `DevDriveInfo`, `DefenderStatus`, `valid_exclusion_path`, `pick_suggestions`, `Inner::defender_status`, `add_defender_exclusion`, `remove_defender_exclusion`, `defender_advice`. Setting `defender.excluded_by_ols`.
 ols-helper defender-exclude-add / defender-exclude-remove (crates/ols-helper/src/main.rs) | Validated Add-MpPreference / Remove-MpPreference for one existing folder.
-PerformanceSettings (ui/src/components/settings/PerformanceSettings.tsx) | Settings → Performance card: Windows Defender exclusions, Dev Drive, and (`OtherAntivirus`) the folders to exclude by hand when another antivirus is installed (no product names or per-product menus shown).
+PerformanceSettings (ui/src/components/settings/PerformanceSettings.tsx) | Settings → General card: Windows Defender exclusions, Dev Drive, and (`OtherAntivirus`) the folders to exclude by hand when another antivirus is installed (no product names or per-product menus shown).
 profiler (crates/ols-core/src/profiler.rs) | §174 Xdebug profile viewer: `ProfileFile`, `FnStat`, `CallNode`, `Profile`, `parse_cachegrind`, `toggle_profiling`, `Inner::list_profiles`, `get_profile`, `delete_profiles`, `set_site_profiling`.
 ProfilerPanel (ui/src/components/project/ProfilerPanel.tsx) | Profiler tool tab (`profiler` in projectToolTabs.ts, after `xdebug`).
 dumps (crates/ols-core/src/dumps.rs) | §175 Dump viewer: `DumpStatus`, `prepend_ini_line`, `ini_sets_prepend`, `render_map`, `Inner::init_dump_capture`, `set_dump_capture`, `dump_status`, `start_dump_server`, `stop_dump_server`, `dump_env`. Setting `php.dump_capture`.
@@ -349,3 +349,5 @@ editors::detect (crates/ols-core/src/editors.rs) | Finds installed editors in us
 editorsCache / loadEditors / invalidateEditorsCache (ui/src/lib/editors.ts) | Shared `list_editors` result for every Open with menu; Settings → Editors → Refresh clears it.
 summarizeEditorRefresh (ui/src/lib/editorRefresh.ts) | Compares installed editors before/after a refresh and returns the toast text (new, no longer found, total). Tested in editorRefresh.test.ts.
 securityIgnore / useIgnoredSecurity (ui/src/lib/securityIgnore.ts, useIgnoredSecurity.ts) | Hidden security items kept in setting `security.ignored`; used by SecuritySummaryCard and SecurityPanel. Tested in securityIgnore.test.ts.
+SecurityDetailsDialog (ui/src/components/SecurityDetailsDialog.tsx) | Dialog with every ended version and audit finding (per project, by severity) from the Dashboard Security card; Hide/Unhide per item.
+formatFinding / formatReport (ui/src/lib/securityExport.ts) | Plain-text and Markdown text of security findings for Copy and Export in SecurityDetailsDialog. Tested in securityExport.test.ts.
