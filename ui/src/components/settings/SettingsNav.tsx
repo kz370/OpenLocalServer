@@ -121,7 +121,6 @@ const SETTING_ENTRIES: SearchEntry[] = [
   { section: 'startup', title: 'Closing the window keeps running in the tray', keywords: 'close to tray background' },
   { section: 'startup', title: 'Desktop notifications', keywords: 'toast alerts crash' },
   { section: 'startup', title: 'Start these services automatically', keywords: 'autostart mysql mariadb nginx apache redis' },
-  { section: 'startup', title: 'Exit OpenLocalServer', keywords: 'quit stop all' },
   // Editors
   { section: 'editors', title: 'Editors', keywords: 'vscode vs code cursor phpstorm ide open with add editor refresh' },
   // Appearance

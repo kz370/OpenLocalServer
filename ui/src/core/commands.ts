@@ -264,6 +264,7 @@ export type CoreCommand =
   | { type: 'set_site_lan_always'; hostname: string; always: boolean }
   | { type: 'start_ca_share' }
   | { type: 'stop_ca_share' }
+  | { type: 'make_qr'; text: string }
   | { type: 'audit_project'; project_id: string }
   | { type: 'audit_all_projects' }
   | { type: 'list_audit_results' }

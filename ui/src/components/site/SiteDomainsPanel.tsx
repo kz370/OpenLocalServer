@@ -1,3 +1,4 @@
+import { QrButton, QrFor } from '@/components/QrCode'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   AlertCircle,
@@ -336,6 +337,7 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
   // Active broadcast tunnel state for this site
   const [siteTunnel, setSiteTunnel] = useState<TunnelStatus | null>(null)
   const [tunnelCopied, setTunnelCopied] = useState(false)
+  const [tunnelQr, setTunnelQr] = useState(false)
   const [tunnelActionBusy, setTunnelActionBusy] = useState(false)
 
   const refreshTunnel = useCallback(async () => {
@@ -1777,7 +1779,8 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
               </div>
 
               {siteTunnel.public_url ? (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                <div className="flex flex-col gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                <div className="flex items-center gap-2">
                   <Globe2 className="size-4 shrink-0 text-emerald-500" />
                   <a
                     href={siteTunnel.public_url}
@@ -1823,6 +1826,9 @@ export function SiteDomainsPanel({ domain: initialDomain, onSave, busy }: SiteDo
                     <ExternalLink className="size-3.5" />
                     <span className="text-[11px]">Open</span>
                   </Button>
+                  <QrButton active={tunnelQr} onClick={() => setTunnelQr((v) => !v)} />
+                </div>
+                {tunnelQr && <QrFor text={siteTunnel.public_url} />}
                 </div>
               ) : siteTunnel.state === 'starting' ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 rounded-md p-2">

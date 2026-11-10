@@ -18,13 +18,14 @@ import {
   Send,
   Trash2,
 } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageLayout } from '@/components/PageLayout'
 import { ErrorCard } from '@/components/ErrorCard'
 import { Spinner } from '@/components/Spinner'
 import { StopIcon } from '@/components/StopIcon'
 import { Badge } from '@/components/ui/badge'
+import { QrButton, QrFor } from '@/components/QrCode'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog } from '@/components/ui/dialog'
@@ -157,7 +158,7 @@ export function TunnelsPage() {
       </div>
       }
     >
-
+      <div className="flex flex-col gap-4 p-1">
       {publicCount > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-success/40 bg-success/10 px-4 py-3 text-sm" role="status">
           <span className="flex items-center gap-2 font-medium text-success">
@@ -217,6 +218,7 @@ export function TunnelsPage() {
       {current && current.state !== 'stopped' && <Inspector key={current.config.id} tunnel={current} />}
 
       <Providers providers={providers} onChanged={loadAll} />
+      </div>
 
       {editing && (
         <TunnelEditor
@@ -298,6 +300,7 @@ function TunnelCard({
   onCheck: () => void
 }) {
   const [copied, setCopied] = useState(false)
+  const [showQr, setShowQr] = useState(false)
   const [showLog, setShowLog] = useState(false)
   const [log, setLog] = useState<string[]>([])
   const running = t.state !== 'stopped' && t.state !== 'needs_confirmation'
@@ -341,7 +344,8 @@ function TunnelCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {t.public_url ? (
-          <div className="flex min-w-0 items-center gap-2 rounded-lg bg-muted/60 px-3 py-2">
+          <div className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted/60 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Globe2 className="size-4 shrink-0 text-success" />
             <span className="min-w-0 flex-1 truncate font-mono text-sm" title={t.public_url}>
               {t.public_url}
@@ -362,6 +366,9 @@ function TunnelCard({
             <Button size="icon" variant="ghost" className="size-7" title="Open" onClick={() => runCommand({ type: 'open_url', url: t.public_url ?? '' })}>
               <ExternalLink />
             </Button>
+            <QrButton active={showQr} onClick={() => setShowQr((v) => !v)} />
+          </div>
+          {showQr && <QrFor text={t.public_url} />}
           </div>
         ) : t.state === 'starting' ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -439,6 +446,11 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
   const [openId, setOpenId] = useState<number | null>(null)
   const { busy, error, setError, run } = useAction()
   const id = tunnel.config.id
+  const root = useRef<HTMLDivElement>(null)
+  // The panel opens below the tunnel cards, often off-screen: bring it into view once.
+  useEffect(() => {
+    root.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [])
 
   const load = useCallback(async () => {
     const r = await runCommand({ type: 'list_tunnel_requests', id }).catch(() => null)
@@ -449,6 +461,7 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
   const detail = requests.find((r) => r.id === openId) ?? null
 
   return (
+    <div ref={root}>
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between gap-3">
@@ -532,6 +545,7 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
         )}
       </CardContent>
     </Card>
+    </div>
   )
 }
 

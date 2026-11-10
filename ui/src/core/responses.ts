@@ -20,6 +20,7 @@ export type CoreResponse =
   | { type: 'lan_info'; info: LanInfo }
   | { type: 'idle_settings'; settings: IdleSettings }
   | { type: 'ca_share'; url: string; qr_svg: string; expires_ms: number }
+  | { type: 'qr'; svg: string }
   | { type: 'eol_report'; items: EolItem[] }
   | { type: 'anonymize_rules'; yaml: string | null }
   | { type: 'processes'; processes: ProcessInfo[] }

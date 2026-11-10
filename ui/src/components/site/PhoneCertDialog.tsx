@@ -12,10 +12,7 @@ import { type Diagnostic, type LanInfo, runCommand } from '@/core'
 import { asDiagnostic } from '@/lib/diagnostic'
 import { confirmAction } from '@/lib/confirm'
 
-/** An SVG string from the core as an image. Never injected as HTML. */
-function Qr({ svg, label, small }: { svg: string; label: string; small?: boolean }) {
-  return <img alt={label} className={`${small ? 'size-28' : 'size-44'} shrink-0 rounded-md bg-white p-1`} src={`data:image/svg+xml;base64,${btoa(svg)}`} />
-}
+import { Qr } from '@/components/QrCode'
 
 function useCountdown(ms: number | null) {
   const [left, setLeft] = useState(ms ?? 0)
@@ -94,19 +91,44 @@ export function PhoneCertDialog({ open, onClose }: { open: boolean; onClose: () 
   )
 }
 
-/** One phone link: a QR code, the address and a copy button. */
-function LinkCard({ title, hint, url, qr }: { title: string; hint: string; url: string; qr: string | null }) {
+/** One phone link: a big centered QR code, the address and a copy button. */
+function LinkCard({ hint, url, qr }: { hint: string; url: string; qr: string | null }) {
   return (
-    <div className="flex min-w-0 flex-1 basis-72 items-center gap-3 rounded-md border border-border p-2.5">
-      {qr && <Qr svg={qr} label={`QR code for ${url}`} small />}
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium">{title}</p>
-        <p className="mt-0.5 break-all font-mono text-[11px]">{url}</p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
-        <Button size="sm" variant="ghost" className="-ml-2 mt-0.5 h-6 px-2 text-xs" onClick={() => void navigator.clipboard.writeText(url)}>
-          <Copy className="size-3" /> Copy
-        </Button>
-      </div>
+    <div className="flex flex-col items-center gap-2 rounded-md border border-border p-3 text-center">
+      {qr && <Qr svg={qr} label={`QR code for ${url}`} className="size-56" />}
+      <p className="break-all font-mono text-xs">{url}</p>
+      <p className="text-[11px] text-muted-foreground">{hint}</p>
+      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => void navigator.clipboard.writeText(url)}>
+        <Copy className="size-3" /> Copy
+      </Button>
+    </div>
+  )
+}
+
+/** Two links (name and address) as tabs, so a phone only ever has one code to scan. */
+function LinkTabs({ links }: { links: { key: string; tab: string; hint: string; url: string; qr: string | null }[] }) {
+  const [active, setActive] = useState(links[0]?.key)
+  const current = links.find((l) => l.key === active) ?? links[0]
+  if (!current) return null
+  return (
+    <div className="flex flex-col gap-2">
+      {links.length > 1 && (
+        <div role="tablist" className="grid grid-cols-2 gap-1 rounded-md bg-muted/40 p-1">
+          {links.map((l) => (
+            <button
+              key={l.key}
+              type="button"
+              role="tab"
+              aria-selected={l.key === current.key}
+              onClick={() => setActive(l.key)}
+              className={`rounded px-2 py-1.5 text-xs font-medium transition-colors ${l.key === current.key ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              {l.tab}
+            </button>
+          ))}
+        </div>
+      )}
+      <LinkCard hint={current.hint} url={current.url} qr={current.qr} />
     </div>
   )
 }
@@ -219,22 +241,12 @@ export function PhoneSection({ hostname, onChanged, onStopped, bare }: { hostnam
         )}
         {info?.on && info.url && (
           <div className="flex flex-col gap-2.5">
-            <div className="flex flex-wrap gap-3">
-              {info.local_url && (
-                <LinkCard
-                  title={`By name: ${info.local_name}`}
-                  hint="iPhone, Mac, Windows, newer Android."
-                  url={info.local_url}
-                  qr={info.local_qr_svg ?? null}
-                />
-              )}
-              <LinkCard
-                title={info.local_url ? 'By address (if the name does not open)' : 'By address'}
-                hint="Works on every phone."
-                url={info.url}
-                qr={info.qr_svg}
-              />
-            </div>
+            <LinkTabs
+              links={[
+                ...(info.local_url ? [{ key: 'name', tab: 'By name', hint: `${info.local_name}: iPhone, Mac, Windows, newer Android.`, url: info.local_url, qr: info.local_qr_svg ?? null }] : []),
+                { key: 'addr', tab: 'By address', hint: info.local_url ? 'Use this if the name does not open. Works on every phone.' : 'Works on every phone.', url: info.url, qr: info.qr_svg },
+              ]}
+            />
             {!info.local_url && (
               <p className="rounded-md border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
                 Phones open a site by name only for <code>.local</code> domains (like <code>shop.local</code>). <code>{hostname}</code> is opened by address and port.

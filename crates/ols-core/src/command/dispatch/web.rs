@@ -44,6 +44,16 @@ impl Core {
                         expires_ms,
                     })
                 }
+                C::MakeQr { text } => {
+                    if text.len() > 2048 {
+                        return Err(CoreError::WebError(
+                            "That text is too long for a QR code (limit 2048 characters). Use a shorter link.".into(),
+                        ));
+                    }
+                    Ok(R::Qr {
+                        svg: crate::lan::qr_svg(&text),
+                    })
+                }
                 C::StopCaShare => {
                     i.stop_ca_share();
                     Ok(R::Ok)

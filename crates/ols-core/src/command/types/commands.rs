@@ -814,6 +814,10 @@ pub enum CoreCommand {
     },
     StartCaShare,
     StopCaShare,
+    /// An SVG QR code for a text (a tunnel's public address). Pure; nothing is shared.
+    MakeQr {
+        text: String,
+    },
     /// §169: security and end-of-life checks.
     AuditProject {
         project_id: String,

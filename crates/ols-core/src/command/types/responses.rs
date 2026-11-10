@@ -71,6 +71,9 @@ pub enum CoreResponse {
         qr_svg: String,
         expires_ms: u64,
     },
+    Qr {
+        svg: String,
+    },
     AuditResults {
         results: Vec<crate::audit::AuditResult>,
     },

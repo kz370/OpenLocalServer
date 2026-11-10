@@ -24,7 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import releaseNotes from '../../../release-notes/v2.12.0.md?raw'
 import { Select, SettingRow, SwitchRow, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand, requestExit } from '@/core'
+import { type EditorInfo, type HelperService, type ServiceStatus, type StartupSettings, runCommand } from '@/core'
 import { createPersistentCache } from '@/lib/cache'
 import { confirmThen } from '@/lib/confirm'
 import { getDirtyForms, useDirtyForm, useDirtyFormCount, warnBeforeLeavingUnsavedChanges } from '@/lib/dirtyForms'
@@ -1072,15 +1072,6 @@ export function SettingsPage() {
                     {services.every((s) => !s.installed) && <span className="text-sm text-muted-foreground">No services installed yet.</span>}
                   </div>
                 </SettingRow>
-                <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
-                  <div className="space-y-0.5">
-                    <div className="text-sm font-medium">Exit OpenLocalServer</div>
-                    <div className="text-xs text-muted-foreground">Stop all running services, web servers, and exit the application.</div>
-                  </div>
-                  <Button variant="destructive" size="sm" onClick={() => void requestExit()}>
-                    Quit OpenLocalServer
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           )}
