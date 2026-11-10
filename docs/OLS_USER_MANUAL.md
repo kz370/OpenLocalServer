@@ -442,6 +442,7 @@ Windows Defender scans every file that `npm install` and `composer install` writ
 - **Pull a server database** over SSH, with personal data replaced by fake values.
 - **Security checks:** warnings for unsupported PHP, Node, Python and database versions, and a Security tab that checks project packages for known vulnerabilities.
 - **Open a site on your phone:** scan a QR code on the same Wi-Fi (HTTPS or HTTP).
+- **Tunnel QR codes:** each public tunnel address has a QR button on the Tunnels page. Scan it to open the tunnel on your phone.
 - **Services sleep when unused:** MariaDB, PostgreSQL, Redis, MongoDB and Memcached can stop when idle and wake on connection. Off by default.
 - **Easier Settings:** the sidebar is grouped, related pages share tabs, and there is a search box and an "On this page" bar. Databases and the dump viewer are under Developer tools.
 - **More editors found**, with a Refresh button in Settings → Editors.
