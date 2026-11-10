@@ -18,7 +18,7 @@ import {
   Send,
   Trash2,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageLayout } from '@/components/PageLayout'
 import { ErrorCard } from '@/components/ErrorCard'
@@ -31,6 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Select, Tabs, Textarea, Toggle } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { ActionMenu, type MenuItem } from '@/components/ui/menu'
 import {
   type DomainSummary,
   type Project,
@@ -141,7 +142,6 @@ export function TunnelsPage() {
   }
 
   const publicCount = tunnels.filter((t) => t.state === 'connected' || t.state === 'starting').length
-  const current = tunnels.find((t) => t.config.id === selected) ?? null
 
   return (
     <PageLayout
@@ -152,33 +152,38 @@ export function TunnelsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Tunnels</h1>
           <p className="text-sm text-muted-foreground">Make a local site reachable from the internet for webhooks, OAuth callbacks or a quick demo. Nothing is ever made public without you starting it.</p>
         </div>
-        <Button size="sm" onClick={() => setEditing({ ...EMPTY, target: domains[0] ? domains[0].url.replace(/\/$/, '') : '' })}>
-          <Plus /> New tunnel
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {publicCount > 0 && (
+            <div className="flex items-center gap-2 rounded-full border border-success/40 bg-success/10 py-1 pl-3 pr-1 text-xs" role="status">
+              <span className="flex items-center gap-1.5 font-medium text-success">
+                <Globe2 className="size-3.5" />
+                {publicCount === 1 ? '1 site public' : `${publicCount} sites public`}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 rounded-full px-2 text-xs"
+                title="Stop every running tunnel"
+                disabled={busy === 'stop-all'}
+                onClick={() =>
+                  run('stop-all', async () => {
+                    for (const t of tunnels.filter((x) => x.state !== 'stopped')) await runCommand({ type: 'stop_tunnel', id: t.config.id })
+                    await refresh()
+                  })
+                }
+              >
+                {busy === 'stop-all' ? <Spinner /> : <StopIcon />} Stop all
+              </Button>
+            </div>
+          )}
+          <Button size="sm" onClick={() => setEditing({ ...EMPTY, target: domains[0] ? domains[0].url.replace(/\/$/, '') : '' })}>
+            <Plus /> New tunnel
+          </Button>
+        </div>
       </div>
       }
     >
-      <div className="flex flex-col gap-4 p-1">
-      {publicCount > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-success/40 bg-success/10 px-4 py-3 text-sm" role="status">
-          <span className="flex items-center gap-2 font-medium text-success">
-            <Globe2 className="size-4" />
-            {publicCount === 1 ? 'A site is public right now.' : `${publicCount} sites are public right now.`}
-          </span>
-          <Button
-            size="sm"
-            variant="success"
-            onClick={() =>
-              run('stop-all', async () => {
-                for (const t of tunnels.filter((x) => x.state !== 'stopped')) await runCommand({ type: 'stop_tunnel', id: t.config.id })
-                await refresh()
-              })
-            }
-          >
-            <StopIcon /> Stop all tunnels
-          </Button>
-        </div>
-      )}
+      <div className="flex flex-col gap-3 p-1">
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />
 
@@ -191,7 +196,7 @@ export function TunnelsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="flex flex-col gap-2">
           {tunnels.map((t) => (
             <TunnelCard
               key={t.config.id}
@@ -210,12 +215,12 @@ export function TunnelsPage() {
                   await refresh()
                 })
               }
-            />
+            >
+              {selected === t.config.id && t.state !== 'stopped' && t.state !== 'needs_confirmation' && <Inspector key={t.config.id} tunnel={t} />}
+            </TunnelCard>
           ))}
         </div>
       )}
-
-      {current && current.state !== 'stopped' && <Inspector key={current.config.id} tunnel={current} />}
 
       <Providers providers={providers} onChanged={loadAll} />
       </div>
@@ -287,6 +292,7 @@ function TunnelCard({
   onEdit,
   onRemove,
   onCheck,
+  children,
 }: {
   t: TunnelStatus
   busy: string | null
@@ -298,6 +304,7 @@ function TunnelCard({
   onEdit: () => void
   onRemove: () => void
   onCheck: () => void
+  children?: ReactNode
 }) {
   const [copied, setCopied] = useState(false)
   const [showQr, setShowQr] = useState(false)
@@ -313,62 +320,81 @@ function TunnelCard({
     if (r.type === 'lines') setLog(r.lines)
   }, 2000)
 
+  const menuItems: MenuItem[] = [
+    ...(running ? [{ label: 'Check connection', icon: <RefreshCw />, onSelect: onCheck, disabled: !t.public_url || busy === `check:${id}` } as MenuItem] : []),
+    ...(t.config.provider !== 'mock' ? [{ label: showLog ? 'Hide logs' : 'Show logs', icon: <ScrollText />, onSelect: () => setShowLog((v) => !v) } as MenuItem] : []),
+    { label: 'Settings', icon: <Pencil />, onSelect: onEdit, separatorAbove: true },
+    { label: 'Delete', icon: <Trash2 />, onSelect: onRemove, danger: true },
+  ]
+
   return (
-    <Card className={cn('transition-colors', t.state === 'connected' && 'border-success/50', selected && 'ring-1 ring-primary')}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <span className="truncate">{t.config.name}</span>
-              <Badge variant={badge.variant}>{badge.label}</Badge>
-              {t.has_password && (
-                <span title="Visitors need a username and password">
-                  <Lock className="size-3.5 text-muted-foreground" />
-                </span>
-              )}
-            </CardTitle>
-            <CardDescription className="truncate">
-              {t.config.target}
-              {project && ` · ${project.name}`}
-            </CardDescription>
+    <Card className={cn('transition-colors', t.state === 'connected' && 'border-success/40', selected && 'ring-1 ring-primary')}>
+      <CardContent className="flex flex-col gap-2 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-semibold">{t.config.name}</span>
+            <Badge variant={badge.variant}>{badge.label}</Badge>
+            {t.has_password && (
+              <span title="Visitors need a username and password">
+                <Lock className="size-3.5 text-muted-foreground" />
+              </span>
+            )}
           </div>
-          <div className="flex shrink-0 gap-1">
-            <Button size="icon" variant="ghost" className="size-8" onClick={onEdit} title="Settings">
-              <Pencil />
-            </Button>
-            <Button size="icon" variant="ghost" className="size-8" onClick={onRemove} title="Delete">
-              <Trash2 />
-            </Button>
+          <div className="flex items-center gap-1">
+            {running && (
+              <span className="mr-2 hidden text-xs tabular-nums text-muted-foreground sm:inline" title="Requests · last request · latency">
+                {t.requests} req · {t.last_request_ms ? timeAgo(t.last_request_ms) : 'no traffic'}
+                {t.latency_ms !== null && ` · ${t.latency_ms} ms`}
+              </span>
+            )}
+            {running && (
+              <Button size="sm" variant={selected ? 'secondary' : 'ghost'} className="h-8" onClick={onSelect} title={selected ? 'Hide traffic' : 'Show traffic'}>
+                <Activity /> Traffic
+              </Button>
+            )}
+            {running ? (
+              <Button size="sm" variant="outline" className="h-8" onClick={onStop} disabled={busy === `stop:${id}`}>
+                {busy === `stop:${id}` ? <Spinner /> : <StopIcon />} Stop
+              </Button>
+            ) : (
+              <Button size="sm" className="h-8" onClick={onStart} disabled={busy === `start:${id}`}>
+                {busy === `start:${id}` ? <Spinner /> : <Play />} Start
+              </Button>
+            )}
+            <ActionMenu items={menuItems} label="Tunnel actions" />
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+
+        <p className="truncate text-xs text-muted-foreground" title={t.config.target}>
+          {t.config.target}
+          {project && ` · ${project.name}`}
+        </p>
+
         {t.public_url ? (
-          <div className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted/60 px-3 py-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <Globe2 className="size-4 shrink-0 text-success" />
-            <span className="min-w-0 flex-1 truncate font-mono text-sm" title={t.public_url}>
-              {t.public_url}
-            </span>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-7"
-              title="Copy the public address"
-              onClick={async () => {
-                await navigator.clipboard.writeText(t.public_url ?? '')
-                setCopied(true)
-                setTimeout(() => setCopied(false), 1500)
-              }}
-            >
-              {copied ? <Check /> : <Copy />}
-            </Button>
-            <Button size="icon" variant="ghost" className="size-7" title="Open" onClick={() => runCommand({ type: 'open_url', url: t.public_url ?? '' })}>
-              <ExternalLink />
-            </Button>
-            <QrButton active={showQr} onClick={() => setShowQr((v) => !v)} />
-          </div>
-          {showQr && <QrFor text={t.public_url} />}
+          <div className="flex min-w-0 flex-col gap-2 rounded-md bg-muted/60 px-2.5 py-1.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <Globe2 className="size-4 shrink-0 text-success" />
+              <span className="min-w-0 flex-1 truncate font-mono text-xs" title={t.public_url}>
+                {t.public_url}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7"
+                title="Copy the public address"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(t.public_url ?? '')
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1500)
+                }}
+              >
+                {copied ? <Check /> : <Copy />}
+              </Button>
+              <Button size="icon" variant="ghost" className="size-7" title="Open" onClick={() => runCommand({ type: 'open_url', url: t.public_url ?? '' })}>
+                <ExternalLink />
+              </Button>
+              <QrButton active={showQr} onClick={() => setShowQr((v) => !v)} />
+            </div>
           </div>
         ) : t.state === 'starting' ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -378,55 +404,60 @@ function TunnelCard({
 
         {t.error && <p className="text-sm text-destructive">{t.error}</p>}
 
-        {running && (
-          <dl className="grid grid-cols-3 gap-2 text-xs">
-            <div>
-              <dt className="text-muted-foreground">Requests</dt>
-              <dd className="font-medium tabular-nums">{t.requests}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Last request</dt>
-              <dd className="font-medium">{t.last_request_ms ? timeAgo(t.last_request_ms) : '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Latency</dt>
-              <dd className="font-medium tabular-nums">{t.latency_ms !== null ? `${t.latency_ms} ms` : '—'}</dd>
-            </div>
-          </dl>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          {running ? (
-            <Button size="sm" variant="success" onClick={onStop} disabled={busy === `stop:${id}`}>
-              {busy === `stop:${id}` ? <Spinner /> : <StopIcon />} Stop
-            </Button>
-          ) : (
-            <Button size="sm" onClick={onStart} disabled={busy === `start:${id}`}>
-              {busy === `start:${id}` ? <Spinner /> : <Play />} Start
-            </Button>
-          )}
-          {running && (
+        <Dialog
+          open={showQr && !!t.public_url}
+          onClose={() => setShowQr(false)}
+          title={t.config.name}
+          description="Scan with a phone to open this public address."
+          footer={
             <>
-              <Button size="sm" variant="secondary" onClick={onSelect}>
-                <Activity /> {selected ? 'Hide traffic' : 'Traffic'}
+              <Button variant="ghost" onClick={() => setShowQr(false)}>
+                Close
               </Button>
-              <Button size="sm" variant="ghost" onClick={onCheck} disabled={!t.public_url || busy === `check:${id}`}>
-                {busy === `check:${id}` ? <Spinner /> : <RefreshCw />} Check
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(t.public_url ?? '')
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1500)
+                }}
+              >
+                {copied ? <Check /> : <Copy />} {copied ? 'Copied' : 'Copy address'}
+              </Button>
+              <Button onClick={() => runCommand({ type: 'open_url', url: t.public_url ?? '' })}>
+                <ExternalLink /> Open
               </Button>
             </>
-          )}
-          {t.config.provider !== 'mock' && (
-            <Button size="sm" variant="ghost" onClick={() => setShowLog(!showLog)}>
-              <ScrollText /> Logs
-            </Button>
-          )}
-        </div>
+          }
+        >
+          <div className="flex flex-col items-center gap-4">
+            {t.public_url && <QrFor text={t.public_url} className="size-64" />}
+            <div className="flex w-full flex-col gap-2 rounded-lg bg-muted/60 p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <Globe2 className="size-4 shrink-0 text-success" />
+                <span className="break-all font-mono text-xs">{t.public_url}</span>
+              </div>
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+                <dt className="text-muted-foreground">Local site</dt>
+                <dd className="truncate">{t.config.target}{project && ` · ${project.name}`}</dd>
+                <dt className="text-muted-foreground">Provider</dt>
+                <dd className="capitalize">{t.config.provider}</dd>
+                <dt className="text-muted-foreground">Access</dt>
+                <dd>{t.has_password ? 'Username and password required' : 'No password'}</dd>
+                <dt className="text-muted-foreground">Requests</dt>
+                <dd className="tabular-nums">{t.requests}</dd>
+              </dl>
+            </div>
+          </div>
+        </Dialog>
 
         {showLog && (
           <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
             {log.length ? log.join('\n') : 'No output yet.'}
           </pre>
         )}
+
+        {children}
       </CardContent>
     </Card>
   )
@@ -461,14 +492,10 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
   const detail = requests.find((r) => r.id === openId) ?? null
 
   return (
-    <div ref={root}>
-    <Card>
-      <CardHeader className="pb-2">
+    <div ref={root} className="mt-1 border-t border-border pt-3">
+      <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle className="text-sm">Traffic · {tunnel.config.name}</CardTitle>
-            <CardDescription>Every request through the tunnel. Passwords, tokens, cookies and signatures are hidden.</CardDescription>
-          </div>
+          <p className="text-xs text-muted-foreground">Every request through the tunnel. Passwords, tokens, cookies and signatures are hidden.</p>
           <Button
             size="sm"
             variant="ghost"
@@ -483,8 +510,6 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
             <Trash2 /> Clear
           </Button>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
         <Tabs
           tabs={[
             { id: 'traffic', label: 'Requests', badge: requests.length },
@@ -498,7 +523,7 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
         {tab === 'traffic' && (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="max-h-[28rem] overflow-y-auto rounded-lg border border-border">
-              {requests.length === 0 && <p className="p-4 text-sm text-muted-foreground">No requests yet. Open the public address, or send one from the webhook tester.</p>}
+              {requests.length === 0 && <p className="p-3 text-xs text-muted-foreground">No requests yet. Open the public address, or send one from the webhook tester.</p>}
               {requests.map((r) => (
                 <button
                   key={r.id}
@@ -527,9 +552,9 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
                   })
                 }
               />
-            ) : (
-              <p className="hidden rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground xl:block">Pick a request to see its headers and body.</p>
-            )}
+            ) : requests.length > 0 ? (
+              <p className="hidden rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground xl:block">Pick a request to see its headers and body.</p>
+            ) : null}
           </div>
         )}
 
@@ -543,8 +568,7 @@ function Inspector({ tunnel }: { tunnel: TunnelStatus }) {
             }}
           />
         )}
-      </CardContent>
-    </Card>
+      </div>
     </div>
   )
 }
