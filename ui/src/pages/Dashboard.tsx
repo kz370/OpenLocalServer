@@ -1,4 +1,4 @@
-import { ChevronDown, FileText, Globe, Home, Moon, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
+import { ChevronDown, FileText, Globe, Home, Info, Moon, Play, Repeat, Rocket, RotateCw } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageLayout } from '@/components/PageLayout'
@@ -31,6 +31,8 @@ import {
 } from '@/lib/diagnosticsNotify'
 import { getServiceLifecycleState, useServiceStatuses } from '@/lib/serviceStatus'
 import { notify, resolveNotificationsForService } from '@/lib/notify'
+import { onOpenStartAllInfo, openSettingsSection, takePendingStartAllInfo } from '@/lib/nav'
+import { Dialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { waitForService } from '@/lib/wait'
 import { confirmAction } from '@/lib/confirm'
@@ -63,6 +65,8 @@ export function DashboardPage({
   const [stats, setStats] = useState<SystemStats | null>(dashboardStatsCache.get)
   const [accessLines, setAccessLines] = useState<string[]>(accessLinesCache.get)
   const serviceStatuses = useServiceStatuses()
+  const [startInfoOpen, setStartInfoOpen] = useState(() => takePendingStartAllInfo())
+  useEffect(() => onOpenStartAllInfo(() => setStartInfoOpen(true)), [])
 
   const action = useAction()
   const { busy, error, setError, run } = action
@@ -148,6 +152,14 @@ export function DashboardPage({
   const totalRunningCount = serviceAggregate?.running ?? 0
   const targetsToStart = serviceAggregate?.start_service_ids ?? []
   const canStart = targetsToStart.length > 0
+  // No startup services selected: Start all is greyed out and the info icon explains why.
+  const hasStartupServices = (serviceAggregate?.enabled_total ?? 0) > 0
+  // Only when there is truly nothing to start; a start target always wins over the icon.
+  const showStartInfo = !hasRunning && !canStart && !hasStartupServices
+  // Name what Start all will start, so the tooltip matches the user's startup list.
+  const startTargetNames = targetsToStart.map(
+    (id) => data?.services.find((service) => service.id === id)?.name ?? id,
+  )
 
   const phpDisplay = useMemo(() => {
     if (!web?.php_pools || web.php_pools.length === 0) return 'None'
@@ -172,11 +184,13 @@ export function DashboardPage({
           >
             <Rocket /> New from Quick App
           </Button>
+          <div className="flex shrink-0 items-stretch">
           <Button
             variant={hasRunning ? 'secondary' : 'default'}
             size="sm"
             className={cn(
               'h-8 min-w-28 rounded-md px-3 text-[13px] font-medium [&_svg]:size-3.5 shrink-0 transition-colors',
+              showStartInfo && 'rounded-r-none',
               hasRunning &&
                 'border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive dark:bg-destructive/[0.18] dark:text-red-300 dark:hover:bg-destructive/25'
             )}
@@ -185,8 +199,10 @@ export function DashboardPage({
               hasRunning
                 ? `Stop all ${totalRunningCount} running service${totalRunningCount === 1 ? '' : 's'}, workers, tunnels, and the web stack`
                 : canStart
-                  ? `Start ${targetsToStart.length} service${targetsToStart.length === 1 ? '' : 's'}`
-                  : 'No installed services are available to start'
+                  ? `Start ${startTargetNames.join(', ')}`
+                  : !hasStartupServices
+                    ? 'No startup services'
+                    : 'Startup services already running'
             }
             onClick={() =>
               hasRunning
@@ -281,10 +297,53 @@ export function DashboardPage({
                   ? 'Stop all'
                   : 'Start all'}
           </Button>
+          {showStartInfo && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 w-8 shrink-0 cursor-pointer rounded-l-none border-l border-border p-0"
+              aria-label="Why is Start all unavailable?"
+              title="Learn more"
+              onClick={() => setStartInfoOpen(true)}
+            >
+              <Info className="size-4" />
+            </Button>
+          )}
+          </div>
         </div>
       </div>
       }
     >
+    <Dialog
+      open={startInfoOpen}
+      onClose={() => setStartInfoOpen(false)}
+      icon={<Info className="size-5 text-sky-500" />}
+      title="Start all has nothing to start"
+      description="No startup services are selected."
+      footer={
+        <div className="flex w-full flex-wrap justify-end gap-2">
+          <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => setStartInfoOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="cursor-pointer"
+            onClick={() => {
+              setStartInfoOpen(false)
+              openSettingsSection('startup')
+              onNavigate('settings')
+            }}
+          >
+            Open startup settings
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+        <p>Start all only starts the services you pick as startup services. None are picked yet, so there is nothing for it to start.</p>
+        <p>Choose them in the startup settings, then Start all will run exactly those. You can still start any service from the Services list.</p>
+      </div>
+    </Dialog>
     <div className="@container/dashboard dashboard-page-container">
 
       <ErrorCard error={error} onDismiss={() => setError(null)} overlay />

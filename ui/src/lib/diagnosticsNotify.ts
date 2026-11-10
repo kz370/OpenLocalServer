@@ -134,6 +134,7 @@ const SESSION_LAUNCH_KEY = 'ols:session:launch_time_ms'
 const SESSION_AUTOSTART_DONE_KEY = 'ols:session:autostart_done'
 const SESSION_STOPPED_KEY = 'ols:session:stopped_services'
 const SESSION_EVER_RUNNING_KEY = 'ols:session:ever_running_services'
+const SESSION_LAUNCH_AUTOSTART_KEY = 'ols:session:launch_autostart_ids'
 
 function loadSessionLaunchTimeMs(): number {
   if (typeof window === 'undefined') return Date.now()
@@ -181,6 +182,23 @@ let autostartCompletedEventReceived =
 let isShuttingDown = false
 
 let autostartIds: string[] = []
+/**
+ * Autostart IDs as they were when the settings first loaded at launch. Only these were
+ * actually started by the app this session; a service ticked later was never started, so
+ * it must not be reported as an autostart failure or shown as "starting".
+ */
+// Kept in sessionStorage with the launch time: a page reload keeps the old launch time,
+// so it must keep the old snapshot too, or services ticked since then count as autostart.
+let launchAutostartIds: Set<string> | null = (() => {
+  if (typeof window === 'undefined') return null
+  try {
+    return sessionStorage.getItem(SESSION_LAUNCH_AUTOSTART_KEY) !== null
+      ? loadSessionSet(SESSION_LAUNCH_AUTOSTART_KEY)
+      : null
+  } catch {
+    return null
+  }
+})()
 let defaultWebServerId = 'nginx'
 let isWebCurrentlyRunning = false
 
@@ -454,6 +472,7 @@ function logSourceForService(id: string): string {
 function getEffectiveAutostartIds(): string[] {
   const result = new Set<string>()
   for (const id of autostartIds) {
+    if (launchAutostartIds && !launchAutostartIds.has(id)) continue
     if (id === 'web') {
       result.add(defaultWebServerId)
     } else {
@@ -1134,6 +1153,10 @@ function updateFromStartupSettings(settings: StartupSettings) {
   const prevLoaded = startupSettingsLoaded
   const prevKey = autostartIds.join(',')
   autostartIds = [...(settings.autostart_services ?? [])]
+  if (launchAutostartIds === null) {
+    launchAutostartIds = new Set(autostartIds)
+    saveSessionSet(SESSION_LAUNCH_AUTOSTART_KEY, launchAutostartIds)
+  }
   startupSettingsLoaded = true
   if (!prevLoaded || prevKey !== autostartIds.join(',')) {
     emitStateChange()

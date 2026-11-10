@@ -19,7 +19,7 @@ pub fn start(ctx: &Ctx) -> R<()> {
         }
     }
     if aggregate.enabled_total == 0 {
-        println!("No installed services are available to start.");
+        println!("No startup services are selected. Pick them in Settings > Start with Windows.");
     }
     Ok(())
 }

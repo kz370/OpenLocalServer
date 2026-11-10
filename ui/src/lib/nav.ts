@@ -134,4 +134,26 @@ export function onOpenSettingsSection(fn: (section: string) => void): () => void
   return () => window.removeEventListener(SETTINGS_SECTION_EVENT, handler)
 }
 
+const START_ALL_INFO_EVENT = 'ols:start-all-info'
+let pendingStartAllInfo = false
 
+/** Asks the Dashboard to open the "Start all has nothing to start" dialog; remembered until it mounts. */
+export function openStartAllInfo() {
+  pendingStartAllInfo = true
+  window.dispatchEvent(new Event(START_ALL_INFO_EVENT))
+}
+
+export function takePendingStartAllInfo(): boolean {
+  const p = pendingStartAllInfo
+  pendingStartAllInfo = false
+  return p
+}
+
+export function onOpenStartAllInfo(fn: () => void): () => void {
+  const handler = () => {
+    pendingStartAllInfo = false
+    fn()
+  }
+  window.addEventListener(START_ALL_INFO_EVENT, handler)
+  return () => window.removeEventListener(START_ALL_INFO_EVENT, handler)
+}

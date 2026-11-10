@@ -291,7 +291,7 @@ Tray Quit / UI Exit / Main-window close | checks | `exit.confirmation.enabled` (
 Tray Stop all | checks | `tray.stop_all.confirmation.enabled` (default true); shows TrayConfirmationWindow when enabled, otherwise dispatches the same StopAll action directly
 TrayConfirmationWindow | follows | OLS appearance/theme updates, plays open/confirm/cancel sounds, and returns approved or canceled Stop all / Exit responses to the Tauri shell without showing the main window
 SettingsPage General | persists | independent `exit.confirmation.enabled` and `tray.stop_all.confirmation.enabled` settings, both default true
-Dashboard / Tray / CLI | read | CoreCommand::GetServiceAggregate / Core::service_aggregate; shared running count and start plan (configured autostart IDs, or all installed services when unset)
+Dashboard / Tray / CLI | read | CoreCommand::GetServiceAggregate / Core::service_aggregate; shared running count and start plan (configured autostart IDs; none when unset; Dashboard Start all is greyed with an info-icon dialog)
 CLI stop | dispatches | CoreCommand::StopAll, identical to Dashboard and tray; tunnels, workers, web servers, services and supervisor strays follow one stop path
 TrayMenuItems | retains | managed bulk-toggle MenuItem handle; service-state events update its label and rebuild submenu marks/counts from one ServiceAggregate snapshot
 Tray Quick App menu | lists | QuickCatalog entries as direct Create actions; selecting one emits `ols:navigate` with the recipe id and name

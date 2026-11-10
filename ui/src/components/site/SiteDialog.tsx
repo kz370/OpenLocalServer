@@ -336,7 +336,7 @@ export function SiteDialog({ target, web, onClose: closeNow, onSaved }: { target
             )}
           </nav>
 
-          <div className={cn('flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5', dirtyDialogCount > 0 && 'pb-36')}>
+          <div className={cn('flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5', dirtyDialogCount > 0 && 'pb-24')}>
             {project?.health && project.health.status !== 'healthy' && (
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
                 <div className="flex items-start sm:items-center gap-3">

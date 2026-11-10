@@ -64,7 +64,7 @@ Follow these 4 simple steps to set up your environment:
    - If the folder does not exist, OLS automatically creates the directory and generates an initial welcome `index.html` or `index.php`.
 
 4. **Start the Web Server & Services:**
-   - Click the green **Start All** button in the top titlebar or sidebar.
+   - Pick your startup services in **Settings → Start with Windows**, then click **Start all** on the Dashboard (or start a single service from the Services list).
    - Visit `http://mysite.test` or `https://mysite.test` in your browser!
 
 ---
@@ -447,6 +447,9 @@ Windows Defender scans every file that `npm install` and `composer install` writ
 - **Easier Settings:** the sidebar is grouped, related pages share tabs, and there is a search box and an "On this page" bar. Databases and the dump viewer are under Developer tools.
 - **More editors found**, with a Refresh button in Settings → Editors.
 - **Hide a security warning** with its eye button; **View details** shows every problem and can export a report.
+- **Start all** starts the services you picked in Settings → Start with Windows. If you picked none, it no longer starts every installed service; the info button next to it explains why.
+- **Fixed:** ticking a startup service no longer shows a false "failed to start" error.
+- **Fixed:** the Unsaved changes bar no longer leaves an empty dark band at the bottom of the page.
 
 ### What's New in v2.11.0
 - **Dockerize a project:** **Docker → Compose → From a project…**, or right-click a project or site → **Dockerize…**. OLS looks at the project (PHP, Node, Python, Go, Rust, Ruby, Java, .NET or a static site), shows what it found, then shows the Dockerfile, compose file and .dockerignore before it writes anything. The project is copied into the image, so it is fast on Windows. Choose **Development** (edits are synced into the container with **Create and watch**) or **Production** (a small multi-stage image that runs as a non-root user). Tick the services your project needs (MariaDB, PostgreSQL, MongoDB, Redis, RabbitMQ, Meilisearch, Mailpit, Adminer): OLS adds them as version-pinned images, generates their passwords and keeps them in the Windows credential store, and passes your app the connection settings. For PHP it adds the extensions the project asks for. Existing files are never overwritten. OLS generated these files from what it could detect in your project. They are a starting point, not a guaranteed working setup. Review them, then build and test before you rely on them. Hide the right-click entry in Settings → Sidebar; it is also hidden when the Docker page is hidden from the sidebar.

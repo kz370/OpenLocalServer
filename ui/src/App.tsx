@@ -15,6 +15,7 @@ import { Titlebar } from '@/components/layout/Titlebar'
 import { ExitingOverlay } from '@/components/layout/ExitingOverlay'
 import { useWindowState } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
+import { openStartAllInfo } from '@/lib/nav'
 import { initDiagnosticsNotificationMonitor } from '@/lib/diagnosticsNotify'
 import { initializeServiceStatusTracking } from '@/lib/serviceStatus'
 import { DirtySaveBar } from '@/components/DirtySaveBar'
@@ -271,10 +272,16 @@ export default function App() {
         setDoctor(true)
         return
       }
+      if (event.payload === 'dashboard:start-all-info') {
+        navigate('dashboard')
+        openStartAllInfo()
+        return
+      }
       if (event.payload === 'settings:editors') {
-        try { sessionStorage.setItem('ols:settings-section', 'editors') } catch {}
+        const section = 'editors'
+        try { sessionStorage.setItem('ols:settings-section', section) } catch {}
         navigate('settings')
-        window.dispatchEvent(new CustomEvent<string>('ols:open-settings-section', { detail: 'editors' }))
+        window.dispatchEvent(new CustomEvent<string>('ols:open-settings-section', { detail: section }))
         return
       }
       const route = event.payload === 'quick-apps' ? 'quickapps' : event.payload === 'terminal' ? 'processes' : event.payload
@@ -328,7 +335,7 @@ export default function App() {
           <ConfirmHost />
           <CommandPalette onNavigate={navigate} onDoctor={openDoctor} />
           <DoctorDialog open={doctor} onClose={() => setDoctor(false)} />
-          <main className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-6', dirtyFormCount > 0 && 'pb-44')}>
+          <main data-dirty-bar={dirtyFormCount > 0 ? '' : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-6">
             {page === 'dashboard' && <DashboardPage onNavigate={navigate} onOpenLogs={openLogs} />}
               {page === 'projects' && <ProjectsPage onNavigate={navigate} />}
               {page === 'sites' && <SitesPage onNavigate={navigate} />}

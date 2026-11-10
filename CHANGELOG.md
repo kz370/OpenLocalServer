@@ -29,6 +29,9 @@ Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.
 - **Easier Settings:** the sidebar is grouped, related pages share tabs, and there is a search box and an "On this page" bar. Databases and the dump viewer are under Developer tools.
 - **More editors found**, with a Refresh button in Settings → Editors.
 - **Hide a security warning** with its eye button; **View details** shows every problem and can export a report.
+- **Start all** starts the services you picked in Settings → Start with Windows. If you picked none, it no longer starts every installed service; the info button next to it explains why.
+- **Fixed:** ticking a startup service no longer shows a false "failed to start" error.
+- **Fixed:** the Unsaved changes bar no longer leaves an empty dark band at the bottom of the page.
 
 ## [2.11.0] — 2026-11-08
 

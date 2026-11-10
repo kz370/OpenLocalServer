@@ -108,23 +108,15 @@ impl ServiceAggregate {
         let mut enabled_ids = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
-        if autostart_service_ids.is_empty() {
-            enabled_ids.extend(
-                services
+        // An empty startup list means "start nothing", so Start all has no targets.
+        for id in autostart_service_ids {
+            let id = if id == "web" { default_web } else { id };
+            if seen.insert(id.to_string())
+                && services
                     .iter()
-                    .filter(|service| service.installed)
-                    .map(|service| service.id.clone()),
-            );
-        } else {
-            for id in autostart_service_ids {
-                let id = if id == "web" { default_web } else { id };
-                if seen.insert(id.to_string())
-                    && services
-                        .iter()
-                        .any(|service| service.id == id && service.installed)
-                {
-                    enabled_ids.push(id.to_string());
-                }
+                    .any(|service| service.id == id && service.installed)
+            {
+                enabled_ids.push(id.to_string());
             }
         }
 
@@ -2500,6 +2492,17 @@ mod tests {
         assert_eq!(all_running.running, 3);
         assert_eq!(all_running.enabled_total, 3);
         assert!(all_running.start_service_ids.is_empty());
+    }
+
+    #[test]
+    fn service_aggregate_with_no_autostart_services_has_no_start_targets() {
+        let services = vec![
+            aggregate_service("nginx", true, false, "web"),
+            aggregate_service("mariadb", true, false, "sql"),
+        ];
+        let aggregate = ServiceAggregate::from_services(services, &[], "nginx");
+        assert_eq!(aggregate.enabled_total, 0);
+        assert!(aggregate.start_service_ids.is_empty());
     }
 
     #[test]

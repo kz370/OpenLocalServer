@@ -309,6 +309,14 @@ button:disabled[data-tooltip],
 }
 
 /* The one scroll region of a page (see PageLayout): thin themed bar, no layout shift. */
+/* While the Unsaved changes bar floats over the page, the page's own scroll area gets
+   room to scroll its last row out from under the bar. Padding the main area instead left
+   a dead band of app background around the bar. */
+main[data-dirty-bar] .ols-scroll:not(.ols-scroll .ols-scroll) {
+  padding-bottom: 6rem;
+  scroll-padding-bottom: 6rem;
+}
+
 .ols-scroll {
   overflow-y: auto;
   overscroll-behavior: contain;

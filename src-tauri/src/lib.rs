@@ -1513,6 +1513,9 @@ fn build_tray(app: &AppHandle, core: Core) -> tauri::Result<()> {
                 "toggle_all" => {
                     if core.service_aggregate().running > 0 {
                         request_stop_all_or_confirm(app, &core);
+                    } else if core.service_aggregate().enabled_total == 0 {
+                        // Nothing is selected to start: the Dashboard dialog explains why.
+                        navigate(app, "dashboard:start-all-info");
                     } else {
                         start_tray_bulk_action(app, &core, TrayBulkAction::Start);
                     }
