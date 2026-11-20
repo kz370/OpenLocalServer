@@ -310,6 +310,48 @@ fn plan_quick_app_reports_field_errors_instead_of_failing() {
 }
 
 #[test]
+fn delete_site_refuses_proxy_and_keeps_its_folder() {
+    let (core, _home) = test_core();
+    let tmp = tempfile::tempdir().unwrap();
+    let folder = tmp.path().join("proxied-app");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("keep.txt"), "keep").unwrap();
+
+    let hostname = "proxied.local".to_string();
+    core.dispatch(CoreCommand::AddDomain {
+        domain: crate::domain::Domain {
+            hostname: hostname.clone(),
+            root: folder.display().to_string(),
+            kind: crate::domain::SiteKind::Proxy {
+                upstream_port: 3033,
+                upstream_host: None,
+                upstream_https: false,
+            },
+            enabled: true,
+            ..Default::default()
+        },
+    })
+    .unwrap();
+
+    assert!(core
+        .dispatch(CoreCommand::DeleteSite {
+            hostname: hostname.clone(),
+        })
+        .is_err());
+
+    // Nothing moved and the site is still registered.
+    assert!(folder.join("keep.txt").exists());
+    assert!(!tmp.path().join("ols_excluded_sites").exists());
+    assert!(core
+        .inner()
+        .domains
+        .lock()
+        .unwrap()
+        .get(&hostname)
+        .is_some());
+}
+
+#[test]
 fn delete_site_moves_folder_to_ols_excluded_sites() {
     let (core, home) = test_core();
     let tmp = tempfile::tempdir().unwrap();

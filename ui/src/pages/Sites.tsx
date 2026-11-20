@@ -1014,7 +1014,8 @@ export function SitesPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
           await run(`remove:${key}`, () => web.removeSiteFromList(key))
         },
       })
-      items.push({
+      // A proxy only forwards traffic and manages no files, so it gets no Safe delete.
+      if (!isProxy) items.push({
         label: 'Safe delete',
         description: 'Moves its folder to the excluded folder',
         icon: <Trash2 />,

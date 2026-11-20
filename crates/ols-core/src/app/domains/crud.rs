@@ -447,6 +447,13 @@ impl Inner {
             let domain = domains.get(hostname).ok_or_else(|| {
                 CoreError::DomainError(format!("{hostname} is not a known domain"))
             })?;
+            if matches!(domain.kind, SiteKind::Proxy { .. }) {
+                return Err(CoreError::failed_fix(
+                    format!("{hostname} cannot be safe-deleted."),
+                    "A proxy site only forwards requests to another address, so OpenLocalServer does not manage any files for it.",
+                    "Use Remove from list to remove the proxy, or Hide to stop serving it. Its folder is never touched.",
+                ));
+            }
             let projects = self.projects.lock().unwrap().list();
             let folder = site_folder(&domain, &projects);
             let project_id = domain.project_id.clone().or_else(|| {

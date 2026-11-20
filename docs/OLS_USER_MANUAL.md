@@ -1,6 +1,6 @@
 # OpenLocalServer (OLS) — Comprehensive User Manual & Operations Guide
 
-> **Version:** 2.12.0
+> **Version:** 2.12.1
 > **Platform:** Windows 10 / Windows 11 (64-bit)  
 > **License:** GPL-3.0-only  
 > **CLI Binary:** `olsc`  
@@ -26,7 +26,7 @@
 14. [AI Assistant & Model Context Protocol (MCP)](#14-ai-assistant--model-context-protocol-mcp)
 15. [Command Line Interface (CLI — `olsc`)](#15-command-line-interface-cli--olsc)
 16. [Keyboard Shortcuts, Settings, Themes & Documentation](#16-keyboard-shortcuts-settings-themes--documentation)
-17. [Version 2.12.0 Specific Notes & What's New](#17-version-2120-specific-notes--whats-new)
+17. [Version 2.12.1 Specific Notes & What's New](#17-version-2121-specific-notes--whats-new)
 
 ---
 
@@ -427,7 +427,10 @@ Windows Defender scans every file that `npm install` and `composer install` writ
 
 ---
 
-## 17. Version 2.12.0 Specific Notes & What's New
+## 17. Version 2.12.1 Specific Notes & What's New
+
+### What's New in v2.12.1
+- **Fixed:** proxy sites no longer offer **Safe delete**. A proxy only forwards requests and manages no files, so its menu now has Hide and Remove from list. Open in your editor and Open folder still work when a folder is linked.
 
 ### What's New in v2.12.0
 - **Migration guard:** OLS saves a project's database before running a migration. **Rewind** puts it back.

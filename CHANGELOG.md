@@ -5,6 +5,13 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.12.1] — 2026-11-20
+
+Patch release. Full notes: [`release-notes/v2.12.1.md`](./release-notes/v2.12.1.md).
+
+### Fixed
+- Proxy sites no longer offer **Safe delete**. A proxy only forwards requests and manages no files, so its menu now has Hide and Remove from list. Open in your editor and Open folder still work when a folder is linked.
+
 ## [2.12.0] — 2026-11-09
 
 Feature release. Full notes: [`release-notes/v2.12.0.md`](./release-notes/v2.12.0.md).
