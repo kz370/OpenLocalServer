@@ -11,6 +11,7 @@ Patch release. Full notes: [`release-notes/v2.12.1.md`](./release-notes/v2.12.1.
 
 ### Fixed
 - Proxy sites no longer offer **Safe delete**. A proxy only forwards requests and manages no files, so its menu now has Hide and Remove from list. Open in your editor and Open folder still work when a folder is linked.
+- Proxy sites no longer get a made-up default folder. The folder field is now "Project folder (optional)" for proxies and can stay empty. A proxy's Start command also starts empty instead of "npm run dev", which fixes Discard not clearing the Unsaved changes bar on a proxy site. A new proxy now starts with no folder at all unless you add one.
 
 ## [2.12.0] — 2026-11-09
 

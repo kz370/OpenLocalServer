@@ -328,11 +328,14 @@ fn body(site: &SiteSpec) -> String {
         return out;
     }
 
-    let root = site.root.replace('\\', "/");
-    out.push_str(&format!("    DocumentRoot \"{root}\"\n"));
-    out.push_str(&format!(
-        "    <Directory \"{root}\">\n        Options Indexes FollowSymLinks\n        AllowOverride All\n        Require all granted\n    </Directory>\n"
-    ));
+    // A proxy may have no folder; an empty DocumentRoot would be an invalid directive.
+    if !site.root.trim().is_empty() {
+        let root = site.root.replace('\\', "/");
+        out.push_str(&format!("    DocumentRoot \"{root}\"\n"));
+        out.push_str(&format!(
+            "    <Directory \"{root}\">\n        Options Indexes FollowSymLinks\n        AllowOverride All\n        Require all granted\n    </Directory>\n"
+        ));
+    }
     let https = site.tls.is_some();
     // Dev sites always revalidate (see nginx), unless the app chose its own caching.
     out.push_str("    <IfModule headers_module>\n        Header setifempty Cache-Control \"no-cache\"\n    </IfModule>\n");

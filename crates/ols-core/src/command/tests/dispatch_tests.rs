@@ -310,6 +310,41 @@ fn plan_quick_app_reports_field_errors_instead_of_failing() {
 }
 
 #[test]
+fn add_domain_allows_proxy_without_a_folder_but_not_other_kinds() {
+    let (core, _home) = test_core();
+    let proxy = |hostname: &str, root: &str, kind: crate::domain::SiteKind| crate::domain::Domain {
+        hostname: hostname.into(),
+        root: root.into(),
+        kind,
+        enabled: true,
+        ..Default::default()
+    };
+    let proxy_kind = || crate::domain::SiteKind::Proxy {
+        upstream_port: 3044,
+        upstream_host: None,
+        upstream_https: false,
+    };
+
+    core.dispatch(CoreCommand::AddDomain {
+        domain: proxy("nofolder.local", "", proxy_kind()),
+    })
+    .unwrap();
+    let stored = core.inner().domains.lock().unwrap().get("nofolder.local");
+    assert_eq!(stored.map(|d| d.root), Some(String::new()));
+
+    assert!(core
+        .dispatch(CoreCommand::AddDomain {
+            domain: proxy("static-nofolder.local", "", crate::domain::SiteKind::Static),
+        })
+        .is_err());
+    assert!(core
+        .dispatch(CoreCommand::AddDomain {
+            domain: proxy("relative.local", "relative\\dir", proxy_kind()),
+        })
+        .is_err());
+}
+
+#[test]
 fn delete_site_refuses_proxy_and_keeps_its_folder() {
     let (core, _home) = test_core();
     let tmp = tempfile::tempdir().unwrap();

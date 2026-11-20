@@ -304,7 +304,10 @@ fn render_body(site: &SiteSpec) -> String {
     }
 
     let https = site.tls.is_some() || site.forwarded_tls;
-    out.push_str(&format!("    root \"{}\";\n", site.root.replace('\\', "/")));
+    // A proxy may have no folder; an empty `root` would be an invalid directive.
+    if !site.root.trim().is_empty() {
+        out.push_str(&format!("    root \"{}\";\n", site.root.replace('\\', "/")));
+    }
     out.push_str("    index index.php index.html index.htm;\n");
 
     for header in &site.blocks.headers {

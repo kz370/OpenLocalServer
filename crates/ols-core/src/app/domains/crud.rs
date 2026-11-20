@@ -333,7 +333,11 @@ impl Inner {
             // Sensible default for a brand-new HTTPS site (§52); the toggle stays user-controlled.
             domain.redirect_https = true;
         }
-        if !Path::new(&domain.root).is_absolute() {
+        // A proxy serves no files, so it may have no folder at all. Anything else, and a
+        // proxy that does name a folder, needs a full path.
+        let proxy_without_folder =
+            matches!(domain.kind, SiteKind::Proxy { .. }) && domain.root.trim().is_empty();
+        if !proxy_without_folder && !Path::new(&domain.root).is_absolute() {
             return Err(CoreError::DomainError(
                 "the document root must be a full folder path".into(),
             ));

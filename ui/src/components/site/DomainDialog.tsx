@@ -388,6 +388,9 @@ export function DomainSettings({
   const isInitialPython = domain?.app?.runtime?.startsWith('python') || ['python', 'py', 'uvicorn', 'flask', 'django', 'waitress', 'streamlit'].some((k) => domain?.app?.executable?.toLowerCase().includes(k))
   const [nodeAppLine, setNodeAppLine] = useState(!isInitialPython ? (initialAppLine || 'npm run dev') : 'npm run dev')
   const [pythonAppLine, setPythonAppLine] = useState(isInitialPython ? (initialAppLine || 'python main.py') : 'python main.py')
+  // The plain Proxy mode's start command is really optional: it starts empty instead of
+  // borrowing Node's "npm run dev" default, which attached a start command to every proxy.
+  const [proxyAppLine, setProxyAppLine] = useState(getInitialServeMode(domain) === 'proxy' ? initialAppLine : '')
   const [defaultTld, setDefaultTld] = useState('local')
   const [template, setTemplate] = useState(`{project}.local`)
   const [showApps, setShowApps] = useState(false)
@@ -414,7 +417,9 @@ export function DomainSettings({
   }, [orderedQuickApps, quickAppSearch])
   const [webServers, setWebServers] = useState<{ id: string; name: string; http: number; https: number; default: boolean }[]>([])
   const [err, setErr] = useState<string | null>(null)
-  const siteSettingsDraft = useMemo(() => buildDomainFromForm(), [d, inspection?.detected_venv, nodeAppLine, nodeVersion, pythonAppLine, pythonInterpreter, serveMode])
+  const siteSettingsDraft = useMemo(() => buildDomainFromForm(), [d, inspection?.detected_venv, nodeAppLine, nodeVersion, proxyAppLine, pythonAppLine, pythonInterpreter, serveMode])
+  // A proxy with no start command only forwards requests, so it needs no folder.
+  const proxyFolderOptional = siteSettingsDraft.kind.type === 'proxy' && !siteSettingsDraft.app
   useDirtyForm({
     scope: saveBarScope,
     formKey: `site:${domain.hostname}`,
@@ -426,6 +431,7 @@ export function DomainSettings({
       setD(savedDraft)
       setServeMode(getInitialServeMode(savedDraft))
       const line = savedDraft.app ? [savedDraft.app.executable, ...savedDraft.app.args].join(' ') : ''
+      setProxyAppLine(getInitialServeMode(savedDraft) === 'proxy' ? line : '')
       if (savedDraft.app?.runtime?.startsWith('python')) setPythonAppLine(line || 'python main.py')
       else setNodeAppLine(line || 'npm run dev')
       setNodeVersion(savedDraft.app?.runtime?.startsWith('node:') ? savedDraft.app.runtime.slice(5) : '')
@@ -450,6 +456,7 @@ export function DomainSettings({
     setServeMode(getInitialServeMode(domain))
     modeTouched.current = false
     const line = domain?.app ? [domain.app.executable, ...domain.app.args].join(' ') : ''
+    setProxyAppLine(getInitialServeMode(domain) === 'proxy' ? line : '')
     const isPy = domain?.app?.runtime?.startsWith('python') || ['python', 'py', 'uvicorn', 'flask', 'django', 'waitress', 'streamlit'].some((k) => domain?.app?.executable?.toLowerCase().includes(k))
     if (isPy) {
       setPythonAppLine(line || 'python main.py')
@@ -638,12 +645,13 @@ export function DomainSettings({
   }, [defaultParent])
 
   useEffect(() => {
-    if (isNew && !rootTouched && parentDir && !d.root) {
+    // A proxy serves no files, so it never gets a made-up default folder.
+    if (isNew && !rootTouched && parentDir && !d.root && serveMode !== 'proxy') {
       const slug = projectName.trim() ? slugify(projectName.trim()) : ''
       const folder = slug || (d.hostname ? domainToFolderName(d.hostname) : '')
       if (folder) setD((cur) => ({ ...cur, root: buildSitePath(parentDir, folder) }))
     }
-  }, [isNew, rootTouched, projectName, d.hostname, d.root, parentDir])
+  }, [isNew, rootTouched, projectName, d.hostname, d.root, parentDir, serveMode])
 
   useEffect(() => {
     if (!showApps) return
@@ -711,7 +719,7 @@ export function DomainSettings({
 
     // Auto-fill site folder from parentDir if root hasn't been manually touched
     let newRoot = d.root
-    if (!rootTouched) {
+    if (!rootTouched && serveMode !== 'proxy') {
       const folder = slug || (trimmed ? domainToFolderName(trimmed) : '')
       newRoot = folder && parentDir ? buildSitePath(parentDir, folder) : ''
     }
@@ -823,7 +831,7 @@ export function DomainSettings({
 
   const onDomainChange = (val: string) => {
     setDomainTouched(true)
-    if (isNew && !d.project_id && !rootTouched) {
+    if (isNew && !d.project_id && !rootTouched && serveMode !== 'proxy') {
       const folder = domainToFolderName(val)
       const newRoot = folder && parentDir ? buildSitePath(parentDir, folder) : ''
       setD((cur) => ({ ...cur, hostname: val, root: newRoot }))
@@ -861,6 +869,8 @@ export function DomainSettings({
     } else if (m === 'proxy') {
       setD((cur) => ({
         ...cur,
+        // A new proxy starts with no folder; the default one filled in for the other modes goes.
+        root: isNew && !rootTouched && !cur.project_id ? '' : cur.root,
         kind: {
           type: 'proxy',
           upstream_port: cur.kind.type === 'proxy' ? cur.kind.upstream_port : 3000,
@@ -937,6 +947,10 @@ export function DomainSettings({
 
   async function submit(): Promise<boolean> {
     const out = buildDomainFromForm()
+    // A proxy without a start command needs no folder. Drop a default one that was filled in
+    // before the user switched to Proxy, unless they typed it or picked a project.
+    const folderOptional = out.kind.type === 'proxy' && !out.app
+    if (folderOptional && isNew && !rootTouched && !out.project_id) out.root = ''
     if (!out.hostname) {
       setErr('Enter a domain like shop.test or mydomain.com')
       return false
@@ -949,7 +963,7 @@ export function DomainSettings({
       setErr(portConflict)
       return false
     }
-    if (!out.root) {
+    if (!out.root && !folderOptional) {
       setErr('Choose the site folder')
       return false
     }
@@ -1013,8 +1027,8 @@ export function DomainSettings({
       const host = d.kind.type === 'proxy' ? d.kind.upstream_host : null
       const https = d.kind.type === 'proxy' ? d.kind.upstream_https : false
       out.kind = { type: 'proxy', upstream_port: port, upstream_host: host, upstream_https: https }
-      if (!host && nodeAppLine.trim()) {
-        const [executable, ...args] = splitArgs(nodeAppLine)
+      if (!host && proxyAppLine.trim()) {
+        const [executable, ...args] = splitArgs(proxyAppLine)
         out.app = {
           executable,
           args,
@@ -1342,10 +1356,12 @@ export function DomainSettings({
           <Input value={d.hostname} onChange={(e) => onDomainChange(e.target.value)} placeholder="shop.test, myapp.local, api.company.dev, mysite.com…" />
         </Field>
         <Field
-          label="Site folder"
+          label={proxyFolderOptional ? 'Project folder (optional)' : 'Site folder'}
           hint={
             isNew && projectMode === 'existing' && d.project_id
               ? 'Using the selected project folder. Browse to choose a different location.'
+              : proxyFolderOptional
+              ? 'A proxy serves no files from a folder. Set one only to open it in your editor or run a start command there. Leave empty if there is none.'
               : d.root
               ? isNew && d.kind.type !== 'proxy'
                 ? `Will serve files from ${d.root}. The folder and welcome page will be created automatically if they don't exist.`
@@ -1870,7 +1886,7 @@ export function DomainSettings({
             />
             {!(d.kind.type === 'proxy' && d.kind.upstream_host) && (
               <Field label="Start command (optional)" hint="OLS supervises it and passes PORT. Example: npm run dev">
-                <Input value={nodeAppLine} onChange={(e) => setNodeAppLine(e.target.value)} placeholder="npm run dev" />
+                <Input value={proxyAppLine} onChange={(e) => setProxyAppLine(e.target.value)} placeholder="npm run dev" />
               </Field>
             )}
           </>

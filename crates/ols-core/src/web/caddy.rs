@@ -232,10 +232,13 @@ fn body(site: &SiteSpec) -> String {
         return out;
     }
 
-    out.push_str(&format!(
-        "    root * \"{}\"\n",
-        site.root.replace('\\', "/")
-    ));
+    // A proxy may have no folder; an empty `root` would be an invalid directive.
+    if !site.root.trim().is_empty() {
+        out.push_str(&format!(
+            "    root * \"{}\"\n",
+            site.root.replace('\\', "/")
+        ));
+    }
     // Dev sites always revalidate (see nginx), unless the app chose its own caching.
     out.push_str("    header ?Cache-Control \"no-cache\"\n");
     for header in &site.blocks.headers {
